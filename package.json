@@ -1,0 +1,14 @@
+{
+  "name": "cardgame-point",
+  "version": "0.0.6",
+  "private": true,
+  "description": "Points-only online card party game for lab teammates.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
