@@ -5,7 +5,8 @@ const UPDATE_NOTICE_KEY = "cardgame_point_seen_update";
 const AVATAR_EXPORT_SIZE = 384;
 const AVATAR_MAX_DATA_URL_LENGTH = 220 * 1024;
 const SCORE_CALC_TOTAL_MS = 7000;
-const POLL_INTERVAL_MS = 300;
+const POLL_INTERVAL_MS = 1200;
+const SCORE_TABLE_TRANSIENT_FAILURE_LIMIT = 6;
 
 const zhText = {
   "CardGame Point": "积分卡牌",
@@ -312,7 +313,8 @@ const state = {
   tomatoSeenKeys: new Set(),
   battleScoreQueue: [],
   battleScoreOverlay: null,
-  battleScoreOverlayTimer: null
+  battleScoreOverlayTimer: null,
+  scoreTableRefreshFailures: 0
 };
 
 boot();
@@ -730,15 +732,29 @@ async function refreshScoreTable(showError = true) {
   if (!state.currentScoreTableId) return;
   try {
     const response = await api(`/api/score-tables/${state.currentScoreTableId}`);
+    state.scoreTableRefreshFailures = 0;
     setCurrentScoreTable(response.table);
   } catch (error) {
     if (showError) state.error = error.message;
-    state.currentScoreTableId = null;
-    clearCurrentScoreTable();
+    if (isConfirmedMissingScoreTable(error) || showError) {
+      state.currentScoreTableId = null;
+      clearCurrentScoreTable();
+      return;
+    }
+    state.scoreTableRefreshFailures += 1;
+    if (state.scoreTableRefreshFailures >= SCORE_TABLE_TRANSIENT_FAILURE_LIMIT) {
+      state.currentScoreTableId = null;
+      clearCurrentScoreTable();
+    }
   }
 }
 
+function isConfirmedMissingScoreTable(error) {
+  return Number(error?.status) === 404 && error?.message === "Score battle table not found.";
+}
+
 function setCurrentScoreTable(table) {
+  state.scoreTableRefreshFailures = 0;
   const previousCommunityKey = state.battleCommunityKey;
   const previousCommunityCards = state.battleCommunityCards;
   const communityKey = `${table.id}:${table.gameNumber}:${table.round}:${(table.community || []).map((card) => card.displayCode || card.code).join("-")}`;
@@ -776,6 +792,7 @@ function setCurrentScoreTable(table) {
 
 function clearCurrentScoreTable() {
   state.scoreTable = null;
+  state.scoreTableRefreshFailures = 0;
   state.battleSelectionKey = "";
   state.battleSelections = [];
   state.battleEffectTarget = null;
@@ -2990,7 +3007,10 @@ async function api(url, options = {}) {
     data = {};
   }
   if (!response.ok) {
-    throw new Error(data.error || `Request failed (${response.status})`);
+    const error = new Error(data.error || `Request failed (${response.status})`);
+    error.status = response.status;
+    error.data = data;
+    throw error;
   }
   return data;
 }
