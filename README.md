@@ -68,9 +68,46 @@ data/
 
 Passwords are saved as salted hashes, not plain text. Do not commit or publish the `data/` directory. Running table state is kept in memory, so restarting the server clears active tables but keeps account data.
 
+When `DATABASE_URL` is set, CardGame Point stores users and remembered login sessions in Postgres instead of JSON files. This is the recommended mode for Render deployment because free web-service files are ephemeral.
+
+## Render Environment Variables
+
+Set these on the Render Web Service:
+
+```text
+DATABASE_URL=<your Render Postgres internal database URL>
+ADMIN_SECRET=<a long private administrator password>
+PGSSLMODE=disable
+```
+
+Use `PGSSLMODE=require` only if your Postgres URL requires SSL. Render internal Postgres URLs usually work without SSL.
+
+Optional:
+
+```text
+ADMIN_PATH=/admin
+MAX_JSON_BODY_BYTES=8388608
+```
+
+## Administrator Tools
+
+If `ADMIN_SECRET` is configured, open:
+
+```text
+https://your-render-service.onrender.com/admin
+```
+
+The admin page can:
+
+- log in with `ADMIN_SECRET`
+- export users, avatars, coins, history, and remembered sessions
+- import a previous admin export or old `users.json` data
+
+Import replaces the current user database, so export a backup first. Treat exported files as sensitive because they contain password hashes and remembered session tokens.
+
 ## Deployment Notes
 
 - The app is currently a Node.js server with local JSON persistence.
-- For public internet hosting, use environment variables for host secrets and keep account data in provider storage or a managed database.
-- Add TLS/HTTPS, stronger session cookie settings, backup/restore tooling, and an administrator maintenance interface before using it beyond a trusted group.
+- For public internet hosting, use environment variables for host secrets and keep account data in Postgres.
+- Add regular export backups before important updates.
 - Do not expose raw data files through static hosting. The `public/` folder is browser-facing; `data/` must remain server-only.

@@ -23,11 +23,14 @@ const SMALL_BLIND = 1;
 const BIG_BLIND = 2;
 const ACTION_SECONDS = 15;
 const SESSION_COOKIE = "cardgame_point_session";
+const ADMIN_COOKIE = "cardgame_point_admin";
+const ADMIN_PATH = normalizeAdminPath(process.env.ADMIN_PATH || "/admin");
+const ADMIN_SECRET = String(process.env.ADMIN_SECRET || "");
 const REMEMBER_SESSION_DAYS = 30;
 const USERNAME_BLOCKLIST = ["dwu", "diwu", "wudi"];
 const MAX_HISTORY_ENTRIES = 50;
 const MAX_AVATAR_DATA_URL_BYTES = 256 * 1024;
-const MAX_JSON_BODY_BYTES = 512 * 1024;
+const MAX_JSON_BODY_BYTES = Number(process.env.MAX_JSON_BODY_BYTES || 8 * 1024 * 1024);
 const UNSTARTED_TABLE_TTL_MS = 5 * 60 * 1000;
 const SCORE_TABLE_IDLE_TTL_MS = 10 * 60 * 1000;
 const TABLE_PRUNE_INTERVAL_MS = 15 * 1000;
@@ -66,6 +69,10 @@ const scoreTables = new Map();
 let nextTableNumber = 1;
 let nextBotNumber = 1;
 let nextScoreTableNumber = 1;
+let pgPool = null;
+let userDb = { users: [] };
+let userWriteQueue = Promise.resolve();
+let sessionWriteQueue = Promise.resolve();
 const shutdownToken = crypto.randomBytes(24).toString("hex");
 
 const rankNames = {
@@ -112,30 +119,16 @@ const handRankNames = [
   "Straight Flush"
 ];
 
-ensureDataFiles();
-let userDb = readUsers();
-loadRememberedSessions();
-
 const server = http.createServer((req, res) => {
   route(req, res).catch((error) => {
     handleRouteError(res, error);
   });
 });
 
-server.listen(PORT, HOST, () => {
-  writeControlFile();
-  console.log(`CardGame Point server running on http://localhost:${PORT}`);
-  for (const ip of getLanAddresses()) {
-    console.log(`LAN address: http://${ip}:${PORT}`);
-  }
-  console.log("Stop script: .\\stop-server.ps1");
+startServer().catch((error) => {
+  console.error("Could not start CardGame Point:", error);
+  process.exit(1);
 });
-
-setInterval(processActionTimeouts, 500);
-setInterval(processScoreBattleTimeouts, 500);
-setInterval(pruneStaleUnstartedTables, TABLE_PRUNE_INTERVAL_MS).unref();
-setInterval(pruneStaleScoreTables, TABLE_PRUNE_INTERVAL_MS).unref();
-setInterval(pruneExpiredSessions, 60 * 60 * 1000).unref();
 
 process.on("exit", cleanupControlFile);
 process.on("SIGINT", () => {
@@ -146,6 +139,89 @@ process.on("SIGTERM", () => {
   cleanupControlFile();
   process.exit(0);
 });
+
+async function startServer() {
+  ensureDataFiles();
+  await initializePersistence();
+  startBackgroundTimers();
+  server.listen(PORT, HOST, () => {
+    writeControlFile();
+    console.log(`CardGame Point server running on http://localhost:${PORT}`);
+    console.log(`Persistence: ${pgPool ? "Postgres" : "JSON files"}`);
+    if (ADMIN_SECRET) console.log(`Admin page: ${ADMIN_PATH}`);
+    for (const ip of getLanAddresses()) {
+      console.log(`LAN address: http://${ip}:${PORT}`);
+    }
+    console.log("Stop script: .\\stop-server.ps1");
+  });
+}
+
+function startBackgroundTimers() {
+  setInterval(processActionTimeouts, 500);
+  setInterval(processScoreBattleTimeouts, 500);
+  setInterval(pruneStaleUnstartedTables, TABLE_PRUNE_INTERVAL_MS).unref();
+  setInterval(pruneStaleScoreTables, TABLE_PRUNE_INTERVAL_MS).unref();
+  setInterval(pruneExpiredSessions, 60 * 60 * 1000).unref();
+}
+
+async function initializePersistence() {
+  if (process.env.DATABASE_URL) {
+    await initializePostgres();
+    userDb = await readUsersFromPostgres();
+    await loadRememberedSessionsFromPostgres();
+    return;
+  }
+  userDb = readUsers();
+  loadRememberedSessions();
+}
+
+async function initializePostgres() {
+  let Pool;
+  try {
+    ({ Pool } = require("pg"));
+  } catch (error) {
+    throw new Error("DATABASE_URL is set, but the pg package is not installed. Run npm install before starting.");
+  }
+  pgPool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: postgresSslConfig()
+  });
+  await pgPool.query("select 1");
+  await pgPool.query(`
+    create table if not exists app_users (
+      id text primary key,
+      username text not null,
+      password_salt text not null,
+      password_hash text not null,
+      created_at text not null,
+      avatar text not null default '',
+      coins integer not null default 0,
+      history jsonb not null default '[]'::jsonb,
+      stats jsonb not null default '{}'::jsonb,
+      seen_update_version text not null default ''
+    )
+  `);
+  await pgPool.query("create unique index if not exists app_users_username_lower_idx on app_users (lower(username))");
+  await pgPool.query(`
+    create table if not exists app_sessions (
+      sid text primary key,
+      user_id text not null references app_users(id) on delete cascade,
+      created_at bigint not null,
+      remember boolean not null default true,
+      expires_at bigint
+    )
+  `);
+}
+
+function postgresSslConfig() {
+  const mode = String(process.env.PGSSLMODE || "").toLowerCase();
+  const url = String(process.env.DATABASE_URL || "").toLowerCase();
+  if (mode === "disable") return false;
+  if (mode === "require" || mode === "no-verify" || url.includes("sslmode=require")) {
+    return { rejectUnauthorized: false };
+  }
+  return undefined;
+}
 
 function handleRouteError(res, error) {
   if (error && Number.isInteger(error.status)) {
@@ -162,6 +238,11 @@ async function route(req, res) {
 
   if (url.pathname.startsWith("/api/")) {
     await handleApi(req, res, url, method);
+    return;
+  }
+
+  if (url.pathname === ADMIN_PATH) {
+    sendAdminPage(res);
     return;
   }
 
@@ -204,7 +285,7 @@ async function handleApi(req, res, url, method) {
       return;
     }
 
-    const created = createUser(username, password);
+    const created = await createUser(username, password);
     createSession(res, created.id, Boolean(body.remember));
     sendJson(res, 201, { user: publicUser(created) });
     return;
@@ -236,10 +317,64 @@ async function handleApi(req, res, url, method) {
     const sid = getCookie(req, SESSION_COOKIE);
     if (sid) {
       sessions.delete(sid);
-      writeSessions();
+      await writeSessions();
     }
     clearSession(res);
     sendJson(res, 200, { ok: true });
+    return;
+  }
+
+  if (method === "GET" && url.pathname === "/api/admin/status") {
+    sendJson(res, 200, {
+      enabled: Boolean(ADMIN_SECRET),
+      authenticated: isAdminAuthenticated(req),
+      storage: pgPool ? "postgres" : "json",
+      users: isAdminAuthenticated(req) ? userDb.users.length : undefined,
+      sessions: isAdminAuthenticated(req) ? sessions.size : undefined
+    });
+    return;
+  }
+
+  if (method === "POST" && url.pathname === "/api/admin/login") {
+    if (!ADMIN_SECRET) {
+      sendJson(res, 404, { error: "Admin mode is disabled." });
+      return;
+    }
+    const body = await readJsonBody(req);
+    if (!safeStringEqual(String(body.secret || ""), ADMIN_SECRET)) {
+      sendJson(res, 403, { error: "Admin secret is incorrect." });
+      return;
+    }
+    setAdminCookie(res);
+    sendJson(res, 200, { ok: true });
+    return;
+  }
+
+  if (method === "POST" && url.pathname === "/api/admin/logout") {
+    clearAdminCookie(res);
+    sendJson(res, 200, { ok: true });
+    return;
+  }
+
+  if (method === "GET" && url.pathname === "/api/admin/export") {
+    if (!requireAdmin(req, res)) return;
+    sendJson(res, 200, exportAdminData());
+    return;
+  }
+
+  if (method === "POST" && url.pathname === "/api/admin/import") {
+    if (!requireAdmin(req, res)) return;
+    const body = await readJsonBody(req);
+    const imported = normalizeAdminImport(body);
+    if (!imported.ok) {
+      sendJson(res, 400, { error: imported.error });
+      return;
+    }
+    userDb = { users: imported.users };
+    replaceSessions(imported.sessions);
+    await writeUsers({ replace: true });
+    await writeSessions();
+    sendJson(res, 200, { ok: true, users: userDb.users.length, sessions: sessions.size });
     return;
   }
 
@@ -287,14 +422,14 @@ async function handleApi(req, res, url, method) {
 
     ensureUserProfile(user);
     user.avatar = avatar;
-    writeUsers();
+    await writeUsers();
     sendJson(res, 200, { user: publicUser(user), profile: profileForClient(user) });
     return;
   }
 
   if (method === "POST" && url.pathname === "/api/profile/update-notice") {
     user.seenUpdateVersion = APP_VERSION;
-    writeUsers();
+    await writeUsers();
     sendJson(res, 200, { user: publicUser(user), version: APP_VERSION });
     return;
   }
@@ -560,7 +695,7 @@ async function handleApi(req, res, url, method) {
   sendJson(res, 404, { error: "Not found" });
 }
 
-function createUser(username, password) {
+async function createUser(username, password) {
   const salt = crypto.randomBytes(16).toString("hex");
   const passwordHash = crypto.scryptSync(password, salt, 64).toString("hex");
   const user = {
@@ -576,7 +711,7 @@ function createUser(username, password) {
     seenUpdateVersion: ""
   };
   userDb.users.push(user);
-  writeUsers();
+  await writeUsers();
   return user;
 }
 
@@ -603,12 +738,14 @@ function createSession(res, userId, remember = false) {
   sessions.set(sid, session);
 
   const maxAge = remember ? `; Max-Age=${maxAgeSeconds}` : "";
-  setCookie(res, `${SESSION_COOKIE}=${sid}; HttpOnly; SameSite=Lax; Path=/${maxAge}`);
+  const secure = isProductionHttps() ? "; Secure" : "";
+  setCookie(res, `${SESSION_COOKIE}=${sid}; HttpOnly; SameSite=Lax; Path=/${secure}${maxAge}`);
   if (remember) writeSessions();
 }
 
 function clearSession(res) {
-  setCookie(res, `${SESSION_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`);
+  const secure = isProductionHttps() ? "; Secure" : "";
+  setCookie(res, `${SESSION_COOKIE}=; HttpOnly; SameSite=Lax; Path=/${secure}; Max-Age=0`);
 }
 
 function getSessionUser(req) {
@@ -646,7 +783,33 @@ function loadRememberedSessions() {
   }
 }
 
+async function loadRememberedSessionsFromPostgres() {
+  const now = Date.now();
+  const result = await pgPool.query(
+    "select sid, user_id, created_at, remember, expires_at from app_sessions where expires_at is null or expires_at > $1",
+    [now]
+  );
+  sessions.clear();
+  for (const row of result.rows) {
+    if (!row.sid || !row.user_id) continue;
+    sessions.set(row.sid, {
+      userId: row.user_id,
+      createdAt: Number(row.created_at) || now,
+      remember: row.remember !== false,
+      expiresAt: row.expires_at === null ? null : Number(row.expires_at)
+    });
+  }
+  await pgPool.query("delete from app_sessions where expires_at is not null and expires_at <= $1", [now]);
+}
+
 function writeSessions() {
+  if (pgPool) {
+    const next = sessionWriteQueue.then(() => persistSessionsToPostgres());
+    sessionWriteQueue = next.catch((error) => {
+      console.error("Could not persist sessions to Postgres:", error);
+    });
+    return next;
+  }
   const now = Date.now();
   const remembered = Array.from(sessions.entries())
     .filter(([, session]) => session.remember && session.expiresAt && session.expiresAt > now)
@@ -655,9 +818,40 @@ function writeSessions() {
       userId: session.userId,
       createdAt: session.createdAt,
       expiresAt: session.expiresAt
-    }));
+  }));
   fs.writeFileSync(`${SESSIONS_FILE}.tmp`, JSON.stringify({ sessions: remembered }, null, 2));
   fs.renameSync(`${SESSIONS_FILE}.tmp`, SESSIONS_FILE);
+  return Promise.resolve();
+}
+
+async function persistSessionsToPostgres() {
+  const now = Date.now();
+  const remembered = Array.from(sessions.entries())
+    .filter(([, session]) => session.remember && session.expiresAt && session.expiresAt > now)
+    .map(([sid, session]) => ({ sid, ...session }));
+  const client = await pgPool.connect();
+  try {
+    await client.query("begin");
+    await client.query("delete from app_sessions");
+    for (const session of remembered) {
+      await client.query(`
+        insert into app_sessions (sid, user_id, created_at, remember, expires_at)
+        values ($1,$2,$3,$4,$5)
+      `, [
+        session.sid,
+        session.userId,
+        Number(session.createdAt) || now,
+        true,
+        Number(session.expiresAt)
+      ]);
+    }
+    await client.query("commit");
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 function pruneExpiredSessions() {
@@ -2947,6 +3141,133 @@ function sendJson(res, status, data) {
   sendText(res, status, "application/json; charset=utf-8", JSON.stringify(data));
 }
 
+function sendAdminPage(res) {
+  sendText(res, 200, "text/html; charset=utf-8", `<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CardGame Point Admin</title>
+    <style>
+      body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, sans-serif; background: #101418; color: #eef3f5; }
+      main { max-width: 920px; margin: 0 auto; padding: 32px 18px; }
+      section { border: 1px solid #2d3942; background: #172028; border-radius: 8px; padding: 18px; margin: 14px 0; }
+      input, textarea, button { font: inherit; border-radius: 6px; border: 1px solid #3a4954; padding: 10px 12px; }
+      input, textarea { width: 100%; box-sizing: border-box; background: #0e1419; color: #eef3f5; }
+      textarea { min-height: 220px; resize: vertical; }
+      button { cursor: pointer; background: #f2c14e; color: #161410; font-weight: 700; }
+      button.secondary { background: #23313b; color: #eef3f5; }
+      .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+      .row > * { flex: 1; min-width: 180px; }
+      pre { white-space: pre-wrap; background: #0e1419; border-radius: 6px; padding: 12px; overflow: auto; }
+      .muted { color: #9fb0bb; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>CardGame Point Admin</h1>
+      <p class="muted">输入 Render 环境变量 ADMIN_SECRET 后，可以导出或导入用户、头像、金币、战绩与记住登录的会话。</p>
+      <section id="login">
+        <h2>管理员登录</h2>
+        <div class="row">
+          <input id="secret" type="password" autocomplete="current-password" placeholder="ADMIN_SECRET" />
+          <button id="loginBtn">登录</button>
+        </div>
+      </section>
+      <section id="tools" hidden>
+        <h2>数据维护</h2>
+        <div class="row">
+          <button id="exportBtn">导出数据</button>
+          <button id="downloadBtn" class="secondary">下载导出文件</button>
+          <button id="logoutBtn" class="secondary">退出管理员</button>
+        </div>
+        <h3>导入数据</h3>
+        <p class="muted">导入会替换当前服务器里的用户和记住登录会话。请先导出备份。</p>
+        <textarea id="importText" placeholder="粘贴 admin 导出的 JSON，或旧 users.json 内容"></textarea>
+        <div class="row">
+          <button id="importBtn">导入并覆盖</button>
+        </div>
+      </section>
+      <section>
+        <h2>状态</h2>
+        <pre id="status">Loading...</pre>
+      </section>
+    </main>
+    <script>
+      const statusEl = document.querySelector("#status");
+      const tools = document.querySelector("#tools");
+      const login = document.querySelector("#login");
+      const importText = document.querySelector("#importText");
+      let lastExport = "";
+
+      async function api(url, options = {}) {
+        const response = await fetch(url, {
+          method: options.method || "GET",
+          headers: options.body ? { "Content-Type": "application/json" } : {},
+          body: options.body ? JSON.stringify(options.body) : undefined,
+          credentials: "same-origin"
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || "Request failed");
+        return data;
+      }
+
+      async function refreshStatus() {
+        const data = await api("/api/admin/status");
+        statusEl.textContent = JSON.stringify(data, null, 2);
+        tools.hidden = !data.authenticated;
+        login.hidden = data.authenticated;
+      }
+
+      document.querySelector("#loginBtn").onclick = async () => {
+        try {
+          await api("/api/admin/login", { method: "POST", body: { secret: document.querySelector("#secret").value } });
+          await refreshStatus();
+        } catch (error) {
+          alert(error.message);
+        }
+      };
+
+      document.querySelector("#logoutBtn").onclick = async () => {
+        await api("/api/admin/logout", { method: "POST" });
+        await refreshStatus();
+      };
+
+      document.querySelector("#exportBtn").onclick = async () => {
+        const data = await api("/api/admin/export");
+        lastExport = JSON.stringify(data, null, 2);
+        importText.value = lastExport;
+        statusEl.textContent = "Export ready. Users: " + data.users.length + ", sessions: " + data.sessions.length;
+      };
+
+      document.querySelector("#downloadBtn").onclick = () => {
+        if (!lastExport) return alert("请先导出数据。");
+        const blob = new Blob([lastExport], { type: "application/json" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = "cardgame-point-export-" + new Date().toISOString().replace(/[:.]/g, "-") + ".json";
+        a.click();
+        URL.revokeObjectURL(a.href);
+      };
+
+      document.querySelector("#importBtn").onclick = async () => {
+        if (!confirm("导入会覆盖当前用户数据。确定继续吗？")) return;
+        try {
+          const parsed = JSON.parse(importText.value);
+          const result = await api("/api/admin/import", { method: "POST", body: parsed });
+          alert("导入完成：用户 " + result.users + "，会话 " + result.sessions);
+          await refreshStatus();
+        } catch (error) {
+          alert(error.message);
+        }
+      };
+
+      refreshStatus().catch((error) => { statusEl.textContent = error.message; });
+    </script>
+  </body>
+</html>`);
+}
+
 function sendText(res, status, type, text, extraHeaders = {}) {
   sendRaw(res, status, type, Buffer.from(text), extraHeaders);
 }
@@ -2976,6 +3297,138 @@ function getCookie(req, name) {
     if (key === name) return valueParts.join("=");
   }
   return "";
+}
+
+function normalizeAdminPath(rawPath) {
+  const value = String(rawPath || "/admin").trim();
+  if (!value.startsWith("/")) return `/${value}`;
+  return value.replace(/\/+$/, "") || "/admin";
+}
+
+function setAdminCookie(res) {
+  const token = adminToken();
+  const secure = isProductionHttps() ? "; Secure" : "";
+  setCookie(res, `${ADMIN_COOKIE}=${token}; HttpOnly; SameSite=Lax; Path=/${secure}; Max-Age=${12 * 60 * 60}`);
+}
+
+function clearAdminCookie(res) {
+  setCookie(res, `${ADMIN_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`);
+}
+
+function isAdminAuthenticated(req) {
+  if (!ADMIN_SECRET) return false;
+  return safeStringEqual(getCookie(req, ADMIN_COOKIE), adminToken());
+}
+
+function requireAdmin(req, res) {
+  if (isAdminAuthenticated(req)) return true;
+  sendJson(res, 403, { error: "Admin login required." });
+  return false;
+}
+
+function adminToken() {
+  return crypto.createHmac("sha256", ADMIN_SECRET).update("cardgame-point-admin").digest("hex");
+}
+
+function safeStringEqual(left, right) {
+  const a = Buffer.from(String(left || ""));
+  const b = Buffer.from(String(right || ""));
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+}
+
+function isProductionHttps() {
+  return Boolean(process.env.RENDER || process.env.NODE_ENV === "production");
+}
+
+function exportAdminData() {
+  const now = Date.now();
+  return {
+    version: APP_VERSION,
+    exportedAt: new Date().toISOString(),
+    storage: pgPool ? "postgres" : "json",
+    users: userDb.users.map((user) => {
+      ensureUserProfile(user);
+      return { ...user };
+    }),
+    sessions: Array.from(sessions.entries())
+      .filter(([, session]) => session.remember && session.expiresAt && session.expiresAt > now)
+      .map(([sid, session]) => ({
+        sid,
+        userId: session.userId,
+        createdAt: session.createdAt,
+        expiresAt: session.expiresAt
+      }))
+  };
+}
+
+function normalizeAdminImport(body) {
+  const source = body && typeof body === "object" ? body : {};
+  const rawUsers = Array.isArray(source.users) ? source.users : [];
+  const users = [];
+  const seenIds = new Set();
+  const seenNames = new Set();
+  for (const raw of rawUsers) {
+    if (!raw || typeof raw !== "object") continue;
+    const username = normalizeUsername(raw.username);
+    if (!username) return { ok: false, error: "Imported users include an invalid username." };
+    const id = String(raw.id || crypto.randomUUID());
+    const nameKey = username.toLowerCase();
+    if (seenIds.has(id) || seenNames.has(nameKey)) {
+      return { ok: false, error: "Imported users contain duplicate ids or names." };
+    }
+    const user = {
+      id,
+      username,
+      passwordSalt: String(raw.passwordSalt || raw.password_salt || ""),
+      passwordHash: String(raw.passwordHash || raw.password_hash || ""),
+      createdAt: String(raw.createdAt || raw.created_at || new Date().toISOString()),
+      avatar: String(raw.avatar || ""),
+      coins: Number(raw.coins) || 0,
+      history: Array.isArray(raw.history) ? raw.history : [],
+      stats: raw.stats && typeof raw.stats === "object" ? raw.stats : blankUserStats(),
+      seenUpdateVersion: String(raw.seenUpdateVersion || raw.seen_update_version || "")
+    };
+    if (!user.passwordSalt || !user.passwordHash) {
+      return { ok: false, error: `Imported user ${username} is missing password hash data.` };
+    }
+    if (user.avatar && !isSupportedAvatar(user.avatar)) user.avatar = "";
+    ensureUserProfile(user);
+    users.push(user);
+    seenIds.add(id);
+    seenNames.add(nameKey);
+  }
+  const userIds = new Set(users.map((user) => user.id));
+  const rawSessions = Array.isArray(source.sessions) ? source.sessions : [];
+  const sessionsList = [];
+  const now = Date.now();
+  for (const raw of rawSessions) {
+    if (!raw || typeof raw !== "object") continue;
+    const sid = String(raw.sid || "");
+    const userId = String(raw.userId || raw.user_id || "");
+    const expiresAt = Number(raw.expiresAt || raw.expires_at);
+    if (!sid || !userIds.has(userId) || !Number.isFinite(expiresAt) || expiresAt <= now) continue;
+    sessionsList.push({
+      sid,
+      userId,
+      createdAt: Number(raw.createdAt || raw.created_at) || now,
+      remember: true,
+      expiresAt
+    });
+  }
+  return { ok: true, users, sessions: sessionsList };
+}
+
+function replaceSessions(importedSessions) {
+  sessions.clear();
+  for (const session of importedSessions) {
+    sessions.set(session.sid, {
+      userId: session.userId,
+      createdAt: session.createdAt,
+      remember: true,
+      expiresAt: session.expiresAt
+    });
+  }
 }
 
 function readJsonBody(req) {
@@ -3063,9 +3516,85 @@ function readUsers() {
   return { users: [] };
 }
 
-function writeUsers() {
+async function readUsersFromPostgres() {
+  const result = await pgPool.query(`
+    select id, username, password_salt, password_hash, created_at, avatar, coins, history, stats, seen_update_version
+    from app_users
+    order by created_at asc
+  `);
+  const users = result.rows.map((row) => {
+    const user = {
+      id: row.id,
+      username: row.username,
+      passwordSalt: row.password_salt,
+      passwordHash: row.password_hash,
+      createdAt: row.created_at,
+      avatar: row.avatar || "",
+      coins: Number(row.coins) || 0,
+      history: Array.isArray(row.history) ? row.history : [],
+      stats: row.stats && typeof row.stats === "object" ? row.stats : blankUserStats(),
+      seenUpdateVersion: row.seen_update_version || ""
+    };
+    ensureUserProfile(user);
+    return user;
+  });
+  return { users };
+}
+
+function writeUsers(options = {}) {
+  if (pgPool) {
+    const next = userWriteQueue.then(() => persistUsersToPostgres(Boolean(options.replace)));
+    userWriteQueue = next.catch((error) => {
+      console.error("Could not persist users to Postgres:", error);
+    });
+    return next;
+  }
   fs.writeFileSync(`${USERS_FILE}.tmp`, JSON.stringify(userDb, null, 2));
   fs.renameSync(`${USERS_FILE}.tmp`, USERS_FILE);
+  return Promise.resolve();
+}
+
+async function persistUsersToPostgres(replace = false) {
+  const client = await pgPool.connect();
+  try {
+    await client.query("begin");
+    if (replace) await client.query("delete from app_users");
+    for (const user of userDb.users) {
+      ensureUserProfile(user);
+      await client.query(`
+        insert into app_users (
+          id, username, password_salt, password_hash, created_at, avatar, coins, history, stats, seen_update_version
+        ) values ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10)
+        on conflict (id) do update set
+          username = excluded.username,
+          password_salt = excluded.password_salt,
+          password_hash = excluded.password_hash,
+          created_at = excluded.created_at,
+          avatar = excluded.avatar,
+          coins = excluded.coins,
+          history = excluded.history,
+          stats = excluded.stats,
+          seen_update_version = excluded.seen_update_version
+      `, [
+        user.id,
+        user.username,
+        user.passwordSalt,
+        user.passwordHash,
+        user.createdAt || new Date().toISOString(),
+        user.avatar || "",
+        Number(user.coins) || 0,
+        JSON.stringify(user.history || []),
+        JSON.stringify(user.stats || blankUserStats()),
+        user.seenUpdateVersion || ""
+      ]);
+    }
+    await client.query("commit");
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 function normalizeUsername(raw) {
