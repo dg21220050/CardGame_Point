@@ -2218,9 +2218,12 @@ function renderScoreSidePanel(table) {
   const leave = table.canLeave
     ? el("button", { className: "ghost danger-text", type: "button", onclick: leaveScoreTable }, [t("Leave")])
     : "";
+  const addCpu = canShowAddScoreBot(table)
+    ? el("button", { className: "ghost", type: "button", onclick: addScoreBot }, [t("Add CPU")])
+    : "";
   panel.appendChild(el("div", { className: "panel-head" }, [
     el("h2", {}, [table.name]),
-    el("div", { className: "head-actions" }, [el("span", { className: "pill" }, [scorePhaseText(table.phase)]), leave])
+    el("div", { className: "head-actions" }, [el("span", { className: "pill" }, [scorePhaseText(table.phase)]), addCpu, leave])
   ]));
   panel.appendChild(el("button", {
     className: "ghost full-width",
@@ -2251,6 +2254,13 @@ function renderScoreSidePanel(table) {
   return panel;
 }
 
+function canShowAddScoreBot(table) {
+  if (!table) return false;
+  const preGame = ["waiting", "finished"].includes(table.phase);
+  const visibleSeats = (table.seats || []).filter((seat) => !seat.left).length;
+  return Boolean(table.canAddBot || (table.isHost && preGame && visibleSeats < (table.maxSeats || 6)));
+}
+
 function renderScoreActionPanel(table) {
   const panel = el("section", { className: "action-panel" });
   const you = table.seats.find((seat) => seat.isYou);
@@ -2268,7 +2278,7 @@ function renderScoreActionPanel(table) {
       onclick: () => setScoreReady(!you.ready)
     }, [you.ready ? t("Cancel score battle ready") : t("Ready for score battle")]));
   }
-  if (table.canAddBot) {
+  if (canShowAddScoreBot(table)) {
     controls.push(el("button", {
       className: "secondary",
       type: "button",
