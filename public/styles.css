@@ -1710,6 +1710,21 @@ button.battle-card:hover {
   line-height: 1.55;
 }
 
+.update-history-modal {
+  max-height: min(82vh, 44rem);
+  overflow: auto;
+}
+
+.update-history-section {
+  border-top: 1px solid var(--line);
+  padding-top: 0.85rem;
+  margin-top: 0.85rem;
+}
+
+.update-history-section h3 {
+  margin: 0 0 0.45rem;
+}
+
 .rules-modal {
   width: min(58rem, 100%);
   max-height: min(48rem, 92vh);
