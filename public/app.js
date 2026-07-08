@@ -304,6 +304,8 @@ const state = {
   showProfile: false,
   showPasswordModal: false,
   showFeedbackModal: false,
+  passwordDraft: { oldPassword: "", newPassword: "", confirmPassword: "" },
+  feedbackDraft: "",
   error: "",
   busy: false,
   pollTimer: null,
@@ -941,7 +943,7 @@ function handleVictoryEffect(table) {
 
 function snapshotFocus() {
   const active = document.activeElement;
-  if (!active || active.tagName !== "INPUT") return null;
+  if (!active || !["INPUT", "TEXTAREA"].includes(active.tagName)) return null;
   const field = active.getAttribute("data-field");
   if (!field) return null;
   let start = null;
@@ -1028,34 +1030,52 @@ function appendAccountModals() {
 
 function closePasswordModal() {
   state.showPasswordModal = false;
+  state.passwordDraft = { oldPassword: "", newPassword: "", confirmPassword: "" };
   render();
 }
 
 function closeFeedbackModal() {
   state.showFeedbackModal = false;
+  state.feedbackDraft = "";
   render();
 }
 
 function appendPasswordModal() {
   if (!state.user || !state.showPasswordModal) return;
+  const draft = state.passwordDraft || { oldPassword: "", newPassword: "", confirmPassword: "" };
   const oldPasswordInput = el("input", {
     type: "password",
+    value: draft.oldPassword,
+    "data-field": "account-old-password",
     autocomplete: "current-password",
-    required: true
+    required: true,
+    oninput: () => {
+      state.passwordDraft.oldPassword = oldPasswordInput.value;
+    }
   });
   const newPasswordInput = el("input", {
     type: "password",
+    value: draft.newPassword,
+    "data-field": "account-new-password",
     autocomplete: "new-password",
     required: true,
     minlength: "4",
-    maxlength: "72"
+    maxlength: "72",
+    oninput: () => {
+      state.passwordDraft.newPassword = newPasswordInput.value;
+    }
   });
   const confirmPasswordInput = el("input", {
     type: "password",
+    value: draft.confirmPassword,
+    "data-field": "account-confirm-password",
     autocomplete: "new-password",
     required: true,
     minlength: "4",
-    maxlength: "72"
+    maxlength: "72",
+    oninput: () => {
+      state.passwordDraft.confirmPassword = confirmPasswordInput.value;
+    }
   });
   const submitButton = el("button", { type: "submit" }, [t("Update password")]);
   const form = el("form", {
@@ -1110,13 +1130,17 @@ function appendPasswordModal() {
 
 function appendFeedbackModal() {
   if (!state.user || !state.showFeedbackModal) return;
-  const counter = el("span", { className: "meta" }, ["0 / 200"]);
+  const feedbackText = state.feedbackDraft || "";
+  const counter = el("span", { className: "meta" }, [`${feedbackText.length} / 200`]);
   const messageInput = el("textarea", {
     rows: "5",
     maxlength: "200",
     required: true,
+    value: feedbackText,
+    "data-field": "account-feedback-message",
     placeholder: t("Do not include personal information."),
     oninput: () => {
+      state.feedbackDraft = messageInput.value;
       counter.textContent = `${messageInput.value.length} / 200`;
     }
   });
@@ -2951,6 +2975,8 @@ async function logout() {
   state.showProfile = false;
   state.showPasswordModal = false;
   state.showFeedbackModal = false;
+  state.passwordDraft = { oldPassword: "", newPassword: "", confirmPassword: "" };
+  state.feedbackDraft = "";
   state.showUpdateNotice = false;
   state.tables = [];
   state.scoreTables = [];
