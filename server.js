@@ -12,6 +12,7 @@ const AVATAR_PRESET_DIR = path.join(PUBLIC_DIR, "avatars");
 const DATA_DIR = path.join(ROOT, "data");
 const USERS_FILE = path.join(DATA_DIR, "users.json");
 const SESSIONS_FILE = path.join(DATA_DIR, "sessions.json");
+const FEEDBACK_FILE = path.join(DATA_DIR, "feedback.json");
 const CONTROL_FILE = path.join(DATA_DIR, "server-control.json");
 const APP_VERSION = "0.0.6";
 
@@ -31,6 +32,7 @@ const USERNAME_BLOCKLIST = ["dwu", "diwu", "wudi"];
 const MAX_HISTORY_ENTRIES = 50;
 const MAX_AVATAR_DATA_URL_BYTES = 256 * 1024;
 const MAX_JSON_BODY_BYTES = Number(process.env.MAX_JSON_BODY_BYTES || 8 * 1024 * 1024);
+const MAX_FEEDBACK_MESSAGE_CHARS = 200;
 const UNSTARTED_TABLE_TTL_MS = 5 * 60 * 1000;
 const SCORE_TABLE_IDLE_TTL_MS = 10 * 60 * 1000;
 const TABLE_PRUNE_INTERVAL_MS = 15 * 1000;
@@ -71,8 +73,10 @@ let nextBotNumber = 1;
 let nextScoreTableNumber = 1;
 let pgPool = null;
 let userDb = { users: [] };
+let feedbackDb = { feedback: [] };
 let userWriteQueue = Promise.resolve();
 let sessionWriteQueue = Promise.resolve();
+let feedbackWriteQueue = Promise.resolve();
 const shutdownToken = crypto.randomBytes(24).toString("hex");
 
 const rankNames = {
@@ -168,10 +172,12 @@ async function initializePersistence() {
   if (process.env.DATABASE_URL) {
     await initializePostgres();
     userDb = await readUsersFromPostgres();
+    feedbackDb = await readFeedbackFromPostgres();
     await loadRememberedSessionsFromPostgres();
     return;
   }
   userDb = readUsers();
+  feedbackDb = readFeedback();
   loadRememberedSessions();
 }
 
@@ -209,6 +215,15 @@ async function initializePostgres() {
       created_at bigint not null,
       remember boolean not null default true,
       expires_at bigint
+    )
+  `);
+  await pgPool.query(`
+    create table if not exists app_feedback (
+      id text primary key,
+      user_id text,
+      username text not null,
+      message text not null,
+      created_at text not null
     )
   `);
 }
@@ -330,7 +345,8 @@ async function handleApi(req, res, url, method) {
       authenticated: isAdminAuthenticated(req),
       storage: pgPool ? "postgres" : "json",
       users: isAdminAuthenticated(req) ? userDb.users.length : undefined,
-      sessions: isAdminAuthenticated(req) ? sessions.size : undefined
+      sessions: isAdminAuthenticated(req) ? sessions.size : undefined,
+      feedback: isAdminAuthenticated(req) ? feedbackDb.feedback.length : undefined
     });
     return;
   }
@@ -362,6 +378,12 @@ async function handleApi(req, res, url, method) {
     return;
   }
 
+  if (method === "GET" && url.pathname === "/api/admin/feedback") {
+    if (!requireAdmin(req, res)) return;
+    sendJson(res, 200, { feedback: feedbackForAdmin() });
+    return;
+  }
+
   if (method === "POST" && url.pathname === "/api/admin/import") {
     if (!requireAdmin(req, res)) return;
     const body = await readJsonBody(req);
@@ -371,10 +393,12 @@ async function handleApi(req, res, url, method) {
       return;
     }
     userDb = { users: imported.users };
+    feedbackDb = { feedback: imported.feedback };
     replaceSessions(imported.sessions);
     await writeUsers({ replace: true });
+    await writeFeedback({ replace: true });
     await writeSessions();
-    sendJson(res, 200, { ok: true, users: userDb.users.length, sessions: sessions.size });
+    sendJson(res, 200, { ok: true, users: userDb.users.length, sessions: sessions.size, feedback: feedbackDb.feedback.length });
     return;
   }
 
@@ -427,10 +451,48 @@ async function handleApi(req, res, url, method) {
     return;
   }
 
+  if (method === "POST" && url.pathname === "/api/profile/password") {
+    const body = await readJsonBody(req);
+    const oldPassword = String(body.oldPassword || "");
+    const newPassword = String(body.newPassword || "");
+    const confirmPassword = String(body.confirmPassword || "");
+
+    if (!verifyPassword(oldPassword, user.passwordSalt, user.passwordHash)) {
+      sendJson(res, 400, { error: "Current password is incorrect." });
+      return;
+    }
+    if (newPassword.length < 4 || newPassword.length > 72) {
+      sendJson(res, 400, { error: "Use a password between 4 and 72 characters." });
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      sendJson(res, 400, { error: "New passwords do not match." });
+      return;
+    }
+
+    const password = hashPassword(newPassword);
+    user.passwordSalt = password.salt;
+    user.passwordHash = password.hash;
+    await writeUsers();
+    sendJson(res, 200, { ok: true });
+    return;
+  }
+
   if (method === "POST" && url.pathname === "/api/profile/update-notice") {
     user.seenUpdateVersion = APP_VERSION;
     await writeUsers();
     sendJson(res, 200, { user: publicUser(user), version: APP_VERSION });
+    return;
+  }
+
+  if (method === "POST" && url.pathname === "/api/feedback") {
+    const body = await readJsonBody(req);
+    const result = await createFeedback(user, body.message);
+    if (!result.ok) {
+      sendJson(res, 400, { error: result.error });
+      return;
+    }
+    sendJson(res, 201, { ok: true, feedback: feedbackForClient(result.feedback) });
     return;
   }
 
@@ -718,13 +780,12 @@ async function handleApi(req, res, url, method) {
 }
 
 async function createUser(username, password) {
-  const salt = crypto.randomBytes(16).toString("hex");
-  const passwordHash = crypto.scryptSync(password, salt, 64).toString("hex");
+  const passwordData = hashPassword(password);
   const user = {
     id: crypto.randomUUID(),
     username,
-    passwordSalt: salt,
-    passwordHash,
+    passwordSalt: passwordData.salt,
+    passwordHash: passwordData.hash,
     createdAt: new Date().toISOString(),
     avatar: "",
     coins: 0,
@@ -737,6 +798,14 @@ async function createUser(username, password) {
   return user;
 }
 
+function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString("hex");
+  return {
+    salt,
+    hash: crypto.scryptSync(password, salt, 64).toString("hex")
+  };
+}
+
 function verifyPassword(password, salt, expectedHash) {
   try {
     const actual = crypto.scryptSync(password, salt, 64);
@@ -745,6 +814,38 @@ function verifyPassword(password, salt, expectedHash) {
   } catch {
     return false;
   }
+}
+
+async function createFeedback(user, rawMessage) {
+  const message = String(rawMessage || "").trim();
+  if (!message) return { ok: false, error: "Write a message before submitting feedback." };
+  if (message.length > MAX_FEEDBACK_MESSAGE_CHARS) {
+    return { ok: false, error: `Feedback must be ${MAX_FEEDBACK_MESSAGE_CHARS} characters or fewer.` };
+  }
+  const feedback = {
+    id: crypto.randomBytes(8).toString("hex"),
+    userId: user.id,
+    username: user.username,
+    message,
+    createdAt: new Date().toISOString()
+  };
+  feedbackDb.feedback.push(feedback);
+  await writeFeedback();
+  return { ok: true, feedback };
+}
+
+function feedbackForClient(feedback) {
+  return {
+    id: feedback.id,
+    createdAt: feedback.createdAt
+  };
+}
+
+function feedbackForAdmin() {
+  return feedbackDb.feedback
+    .slice()
+    .sort((left, right) => String(right.createdAt).localeCompare(String(left.createdAt)))
+    .map((feedback) => ({ ...feedback }));
 }
 
 function createSession(res, userId, remember = false) {
@@ -3406,6 +3507,9 @@ function sendAdminPage(res) {
       .row > * { flex: 1; min-width: 180px; }
       pre { white-space: pre-wrap; background: #0e1419; border-radius: 6px; padding: 12px; overflow: auto; }
       .muted { color: #9fb0bb; }
+      .feedback-list { display: grid; gap: 10px; margin-top: 12px; }
+      .feedback-item { border: 1px solid #2d3942; border-radius: 6px; padding: 12px; background: #0e1419; white-space: pre-wrap; }
+      .feedback-meta { color: #9fb0bb; font-size: 0.9rem; margin-bottom: 6px; }
     </style>
   </head>
   <body>
@@ -3433,6 +3537,15 @@ function sendAdminPage(res) {
           <button id="importBtn">导入并覆盖</button>
         </div>
       </section>
+      <section id="feedbackTools" hidden>
+        <h2>用户留言</h2>
+        <p class="muted">留言限制 200 字。用户提交前会看到“不要留下个人信息”的提醒。</p>
+        <div class="row">
+          <button id="feedbackRefreshBtn">刷新留言</button>
+          <button id="feedbackDownloadBtn" class="secondary">下载留言</button>
+        </div>
+        <div id="feedbackList" class="feedback-list"></div>
+      </section>
       <section>
         <h2>状态</h2>
         <pre id="status">Loading...</pre>
@@ -3443,7 +3556,10 @@ function sendAdminPage(res) {
       const tools = document.querySelector("#tools");
       const login = document.querySelector("#login");
       const importText = document.querySelector("#importText");
+      const feedbackTools = document.querySelector("#feedbackTools");
+      const feedbackList = document.querySelector("#feedbackList");
       let lastExport = "";
+      let lastFeedback = [];
 
       async function api(url, options = {}) {
         const response = await fetch(url, {
@@ -3461,7 +3577,9 @@ function sendAdminPage(res) {
         const data = await api("/api/admin/status");
         statusEl.textContent = JSON.stringify(data, null, 2);
         tools.hidden = !data.authenticated;
+        feedbackTools.hidden = !data.authenticated;
         login.hidden = data.authenticated;
+        if (data.authenticated) await loadFeedback();
       }
 
       document.querySelector("#loginBtn").onclick = async () => {
@@ -3482,7 +3600,7 @@ function sendAdminPage(res) {
         const data = await api("/api/admin/export");
         lastExport = JSON.stringify(data, null, 2);
         importText.value = lastExport;
-        statusEl.textContent = "Export ready. Users: " + data.users.length + ", sessions: " + data.sessions.length;
+        statusEl.textContent = "Export ready. Users: " + data.users.length + ", sessions: " + data.sessions.length + ", feedback: " + (data.feedback || []).length;
       };
 
       document.querySelector("#downloadBtn").onclick = () => {
@@ -3495,12 +3613,57 @@ function sendAdminPage(res) {
         URL.revokeObjectURL(a.href);
       };
 
+      async function loadFeedback() {
+        const data = await api("/api/admin/feedback");
+        lastFeedback = data.feedback || [];
+        feedbackList.innerHTML = "";
+        if (!lastFeedback.length) {
+          feedbackList.appendChild(Object.assign(document.createElement("p"), {
+            className: "muted",
+            textContent: "暂无留言。"
+          }));
+          return;
+        }
+        for (const item of lastFeedback) {
+          const node = document.createElement("article");
+          node.className = "feedback-item";
+          const meta = document.createElement("div");
+          meta.className = "feedback-meta";
+          meta.textContent = (item.createdAt || "") + " | " + (item.username || "Unknown") + " | " + (item.userId || "");
+          const message = document.createElement("div");
+          message.textContent = item.message || "";
+          node.append(meta, message);
+          feedbackList.appendChild(node);
+        }
+      }
+
+      document.querySelector("#feedbackRefreshBtn").onclick = async () => {
+        try {
+          await loadFeedback();
+        } catch (error) {
+          alert(error.message);
+        }
+      };
+
+      document.querySelector("#feedbackDownloadBtn").onclick = () => {
+        const payload = JSON.stringify({
+          exportedAt: new Date().toISOString(),
+          feedback: lastFeedback
+        }, null, 2);
+        const blob = new Blob([payload], { type: "application/json" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = "cardgame-feedback-" + new Date().toISOString().replace(/[:.]/g, "-") + ".json";
+        a.click();
+        URL.revokeObjectURL(a.href);
+      };
+
       document.querySelector("#importBtn").onclick = async () => {
         if (!confirm("导入会覆盖当前用户数据。确定继续吗？")) return;
         try {
           const parsed = JSON.parse(importText.value);
           const result = await api("/api/admin/import", { method: "POST", body: parsed });
-          alert("导入完成：用户 " + result.users + "，会话 " + result.sessions);
+          alert("导入完成：用户 " + result.users + "，会话 " + result.sessions + "，留言 " + result.feedback);
           await refreshStatus();
         } catch (error) {
           alert(error.message);
@@ -3603,7 +3766,8 @@ function exportAdminData() {
         userId: session.userId,
         createdAt: session.createdAt,
         expiresAt: session.expiresAt
-      }))
+      })),
+    feedback: feedbackForAdmin()
   };
 }
 
@@ -3661,7 +3825,10 @@ function normalizeAdminImport(body) {
       expiresAt
     });
   }
-  return { ok: true, users, sessions: sessionsList };
+  const feedback = Array.isArray(source.feedback)
+    ? source.feedback.map(normalizeFeedbackEntry).filter(Boolean)
+    : feedbackDb.feedback.slice();
+  return { ok: true, users, sessions: sessionsList, feedback };
 }
 
 function replaceSessions(importedSessions) {
@@ -3721,6 +3888,9 @@ function ensureDataFiles() {
   if (!fs.existsSync(SESSIONS_FILE)) {
     fs.writeFileSync(SESSIONS_FILE, JSON.stringify({ sessions: [] }, null, 2));
   }
+  if (!fs.existsSync(FEEDBACK_FILE)) {
+    fs.writeFileSync(FEEDBACK_FILE, JSON.stringify({ feedback: [] }, null, 2));
+  }
 }
 
 function writeControlFile() {
@@ -3761,6 +3931,18 @@ function readUsers() {
   return { users: [] };
 }
 
+function readFeedback() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(FEEDBACK_FILE, "utf8"));
+    if (Array.isArray(parsed.feedback)) {
+      return { feedback: parsed.feedback.map(normalizeFeedbackEntry).filter(Boolean) };
+    }
+  } catch {
+    // Recreate below.
+  }
+  return { feedback: [] };
+}
+
 async function readUsersFromPostgres() {
   const result = await pgPool.query(`
     select id, username, password_salt, password_hash, created_at, avatar, coins, history, stats, seen_update_version
@@ -3786,6 +3968,23 @@ async function readUsersFromPostgres() {
   return { users };
 }
 
+async function readFeedbackFromPostgres() {
+  const result = await pgPool.query(`
+    select id, user_id, username, message, created_at
+    from app_feedback
+    order by created_at asc
+  `);
+  return {
+    feedback: result.rows.map((row) => normalizeFeedbackEntry({
+      id: row.id,
+      userId: row.user_id,
+      username: row.username,
+      message: row.message,
+      createdAt: row.created_at
+    })).filter(Boolean)
+  };
+}
+
 function writeUsers(options = {}) {
   if (pgPool) {
     const next = userWriteQueue.then(() => persistUsersToPostgres(Boolean(options.replace)));
@@ -3796,6 +3995,19 @@ function writeUsers(options = {}) {
   }
   fs.writeFileSync(`${USERS_FILE}.tmp`, JSON.stringify(userDb, null, 2));
   fs.renameSync(`${USERS_FILE}.tmp`, USERS_FILE);
+  return Promise.resolve();
+}
+
+function writeFeedback(options = {}) {
+  if (pgPool) {
+    const next = feedbackWriteQueue.then(() => persistFeedbackToPostgres(Boolean(options.replace)));
+    feedbackWriteQueue = next.catch((error) => {
+      console.error("Could not persist feedback to Postgres:", error);
+    });
+    return next;
+  }
+  fs.writeFileSync(`${FEEDBACK_FILE}.tmp`, JSON.stringify(feedbackDb, null, 2));
+  fs.renameSync(`${FEEDBACK_FILE}.tmp`, FEEDBACK_FILE);
   return Promise.resolve();
 }
 
@@ -3840,6 +4052,52 @@ async function persistUsersToPostgres(replace = false) {
   } finally {
     client.release();
   }
+}
+
+async function persistFeedbackToPostgres(replace = false) {
+  const client = await pgPool.connect();
+  try {
+    await client.query("begin");
+    if (replace) await client.query("delete from app_feedback");
+    for (const feedback of feedbackDb.feedback) {
+      const entry = normalizeFeedbackEntry(feedback);
+      if (!entry) continue;
+      await client.query(`
+        insert into app_feedback (id, user_id, username, message, created_at)
+        values ($1,$2,$3,$4,$5)
+        on conflict (id) do update set
+          user_id = excluded.user_id,
+          username = excluded.username,
+          message = excluded.message,
+          created_at = excluded.created_at
+      `, [
+        entry.id,
+        entry.userId || null,
+        entry.username,
+        entry.message,
+        entry.createdAt
+      ]);
+    }
+    await client.query("commit");
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+function normalizeFeedbackEntry(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const message = String(raw.message || "").trim().slice(0, MAX_FEEDBACK_MESSAGE_CHARS);
+  if (!message) return null;
+  return {
+    id: String(raw.id || crypto.randomBytes(8).toString("hex")),
+    userId: String(raw.userId || raw.user_id || ""),
+    username: String(raw.username || "Unknown").slice(0, 40),
+    message,
+    createdAt: String(raw.createdAt || raw.created_at || new Date().toISOString())
+  };
 }
 
 function normalizeUsername(raw) {

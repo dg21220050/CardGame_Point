@@ -78,6 +78,23 @@ Object.assign(zhText, {
   "Avatar": "头像",
   "Upload avatar": "上传头像",
   "Clear avatar": "清除头像",
+  "Change password": "修改密码",
+  "Current password": "原密码",
+  "New password": "新密码",
+  "Confirm new password": "再次输入新密码",
+  "Update password": "确认修改",
+  "Password updated.": "密码已更新。",
+  "Message admin": "给管理员留言",
+  "Feedback to admin": "给管理员留言",
+  "Do not include personal information.": "请不要留下个人信息。",
+  "Feedback is limited to 200 characters.": "留言限制 200 字。",
+  "Submit feedback": "提交留言",
+  "Feedback sent. Thank you.": "留言已提交，谢谢。",
+  "Write a message before submitting feedback.": "请先填写留言内容。",
+  "Feedback must be 200 characters or fewer.": "留言不能超过 200 字。",
+  "Current password is incorrect.": "原密码不正确。",
+  "New passwords do not match.": "两次输入的新密码不一致。",
+  "New password must be 4-72 characters.": "新密码长度需为 4-72 个字符。",
   "History": "历史战绩",
   "No history yet.": "暂无历史战绩。",
   "Times left": "退出记录",
@@ -285,6 +302,8 @@ const state = {
   scoreTable: null,
   profile: null,
   showProfile: false,
+  showPasswordModal: false,
+  showFeedbackModal: false,
   error: "",
   busy: false,
   pollTimer: null,
@@ -964,6 +983,7 @@ function render() {
   app.appendChild(renderApp());
   appendVictoryEffect();
   appendUpdateNotice();
+  appendAccountModals();
   renderBattleRulesModalHost();
   restoreFocus(focus);
 }
@@ -997,6 +1017,154 @@ function appendUpdateNotice() {
         el("li", {}, [t("This build is prepared for GitHub backup and future internet deployment.")])
       ]),
       el("button", { type: "button", onclick: dismissUpdateNotice }, [t("Got it")])
+    ])
+  ]));
+}
+
+function appendAccountModals() {
+  appendPasswordModal();
+  appendFeedbackModal();
+}
+
+function closePasswordModal() {
+  state.showPasswordModal = false;
+  render();
+}
+
+function closeFeedbackModal() {
+  state.showFeedbackModal = false;
+  render();
+}
+
+function appendPasswordModal() {
+  if (!state.user || !state.showPasswordModal) return;
+  const oldPasswordInput = el("input", {
+    type: "password",
+    autocomplete: "current-password",
+    required: true
+  });
+  const newPasswordInput = el("input", {
+    type: "password",
+    autocomplete: "new-password",
+    required: true,
+    minlength: "4",
+    maxlength: "72"
+  });
+  const confirmPasswordInput = el("input", {
+    type: "password",
+    autocomplete: "new-password",
+    required: true,
+    minlength: "4",
+    maxlength: "72"
+  });
+  const submitButton = el("button", { type: "submit" }, [t("Update password")]);
+  const form = el("form", {
+    className: "form-grid",
+    onsubmit: async (event) => {
+      event.preventDefault();
+      const oldPassword = oldPasswordInput.value;
+      const newPassword = newPasswordInput.value;
+      const confirmPassword = confirmPasswordInput.value;
+      if (newPassword !== confirmPassword) {
+        alert(t("New passwords do not match."));
+        return;
+      }
+      if (newPassword.length < 4 || newPassword.length > 72) {
+        alert(t("New password must be 4-72 characters."));
+        return;
+      }
+      submitButton.disabled = true;
+      try {
+        await api("/api/profile/password", {
+          method: "POST",
+          body: { oldPassword, newPassword, confirmPassword }
+        });
+        alert(t("Password updated."));
+        closePasswordModal();
+      } catch (error) {
+        alert(displayError(error.message));
+      } finally {
+        submitButton.disabled = false;
+      }
+    }
+  }, [
+    el("label", {}, [el("span", {}, [t("Current password")]), oldPasswordInput]),
+    el("label", {}, [el("span", {}, [t("New password")]), newPasswordInput]),
+    el("label", {}, [el("span", {}, [t("Confirm new password")]), confirmPasswordInput]),
+    submitButton
+  ]);
+
+  app.appendChild(el("div", { className: "modal-backdrop", role: "presentation" }, [
+    el("section", { className: "update-modal", role: "dialog", "aria-modal": "true", "aria-labelledby": "password-title" }, [
+      el("div", { className: "modal-head" }, [
+        el("div", {}, [
+          el("span", { className: "pill" }, [t("Profile")]),
+          el("h2", { id: "password-title" }, [t("Change password")])
+        ]),
+        el("button", { className: "ghost modal-close", type: "button", onclick: closePasswordModal, "aria-label": t("Close") }, ["x"])
+      ]),
+      form
+    ])
+  ]));
+}
+
+function appendFeedbackModal() {
+  if (!state.user || !state.showFeedbackModal) return;
+  const counter = el("span", { className: "meta" }, ["0 / 200"]);
+  const messageInput = el("textarea", {
+    rows: "5",
+    maxlength: "200",
+    required: true,
+    placeholder: t("Do not include personal information."),
+    oninput: () => {
+      counter.textContent = `${messageInput.value.length} / 200`;
+    }
+  });
+  const submitButton = el("button", { type: "submit" }, [t("Submit feedback")]);
+  const form = el("form", {
+    className: "form-grid",
+    onsubmit: async (event) => {
+      event.preventDefault();
+      const message = messageInput.value.trim();
+      if (!message) {
+        alert(t("Write a message before submitting feedback."));
+        return;
+      }
+      if (message.length > 200) {
+        alert(t("Feedback must be 200 characters or fewer."));
+        return;
+      }
+      submitButton.disabled = true;
+      try {
+        await api("/api/feedback", {
+          method: "POST",
+          body: { message }
+        });
+        alert(t("Feedback sent. Thank you."));
+        closeFeedbackModal();
+      } catch (error) {
+        alert(displayError(error.message));
+      } finally {
+        submitButton.disabled = false;
+      }
+    }
+  }, [
+    el("p", { className: "meta" }, [t("Do not include personal information.")]),
+    el("label", {}, [el("span", {}, [t("Feedback is limited to 200 characters.")]), messageInput]),
+    counter,
+    submitButton
+  ]);
+
+  app.appendChild(el("div", { className: "modal-backdrop", role: "presentation" }, [
+    el("section", { className: "update-modal", role: "dialog", "aria-modal": "true", "aria-labelledby": "feedback-title" }, [
+      el("div", { className: "modal-head" }, [
+        el("div", {}, [
+          el("span", { className: "pill" }, [t("Profile")]),
+          el("h2", { id: "feedback-title" }, [t("Feedback to admin")])
+        ]),
+        el("button", { className: "ghost modal-close", type: "button", onclick: closeFeedbackModal, "aria-label": t("Close") }, ["x"])
+      ]),
+      form
     ])
   ]));
 }
@@ -1456,7 +1624,23 @@ function renderProfilePanel() {
         ]),
         (profile.avatar || state.user?.avatar)
           ? el("button", { className: "ghost", type: "button", onclick: () => updateAvatar("") }, [t("Clear avatar")])
-          : ""
+          : "",
+        el("button", {
+          className: "ghost",
+          type: "button",
+          onclick: () => {
+            state.showPasswordModal = true;
+            render();
+          }
+        }, [t("Change password")]),
+        el("button", {
+          className: "ghost",
+          type: "button",
+          onclick: () => {
+            state.showFeedbackModal = true;
+            render();
+          }
+        }, [t("Message admin")])
       ])
     ]),
     el("div", { className: "profile-stats" }, [
@@ -2765,6 +2949,8 @@ async function logout() {
   state.user = null;
   state.profile = null;
   state.showProfile = false;
+  state.showPasswordModal = false;
+  state.showFeedbackModal = false;
   state.showUpdateNotice = false;
   state.tables = [];
   state.scoreTables = [];
