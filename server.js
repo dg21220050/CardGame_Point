@@ -474,6 +474,7 @@ async function handleApi(req, res, url, method) {
         sendJson(res, 200, { left: true, deleted: true });
         return;
       }
+      processScoreBots(table);
       sendJson(res, 200, { left: true, table: scoreTableView(table, user) });
       return;
     }
@@ -485,6 +486,25 @@ async function handleApi(req, res, url, method) {
         sendJson(res, 400, { error: result.error });
         return;
       }
+      processScoreBots(table);
+      sendJson(res, 200, { table: scoreTableView(table, user) });
+      return;
+    }
+
+    if (method === "POST" && pathParts[3] === "add-bot") {
+      if (table.createdBy !== user.id) {
+        sendJson(res, 403, { error: "Only the table host can add computer players." });
+        return;
+      }
+      if (!["waiting", "finished"].includes(table.phase)) {
+        sendJson(res, 409, { error: "Computer players can be added before a score battle starts." });
+        return;
+      }
+      if (scoreVisibleSeats(table).length >= SCORE_BATTLE_MAX_SEATS) {
+        sendJson(res, 409, { error: "The score battle table is full." });
+        return;
+      }
+      addScoreBot(table);
       sendJson(res, 200, { table: scoreTableView(table, user) });
       return;
     }
@@ -499,6 +519,7 @@ async function handleApi(req, res, url, method) {
         sendJson(res, 400, { error: result.error });
         return;
       }
+      processScoreBots(table);
       sendJson(res, 200, { table: scoreTableView(table, user) });
       return;
     }
@@ -532,6 +553,7 @@ async function handleApi(req, res, url, method) {
         sendJson(res, 400, { error: result.error });
         return;
       }
+      processScoreBots(table);
       sendJson(res, 200, { table: scoreTableView(table, user) });
       return;
     }
@@ -1783,12 +1805,33 @@ function createScoreTable(rawName, user) {
 }
 
 function createScoreSeat(user) {
-  return {
-    seatId: crypto.randomBytes(8).toString("hex"),
+  return createScoreSeatState({
+    kind: "human",
     userId: user.id,
     displayName: user.username,
     avatar: user.avatar || "",
-    ready: false,
+    ready: false
+  });
+}
+
+function createScoreBotSeat(name) {
+  return createScoreSeatState({
+    kind: "bot",
+    userId: null,
+    displayName: name,
+    avatar: "",
+    ready: true
+  });
+}
+
+function createScoreSeatState(options) {
+  return {
+    seatId: crypto.randomBytes(8).toString("hex"),
+    kind: options.kind,
+    userId: options.userId,
+    displayName: options.displayName,
+    avatar: options.avatar || "",
+    ready: Boolean(options.ready),
     inGame: false,
     left: false,
     hand: [],
@@ -1806,6 +1849,15 @@ function createScoreSeat(user) {
     winCount: 0,
     lastResult: null
   };
+}
+
+function addScoreBot(table) {
+  const name = `Bot ${nextBotNumber++}`;
+  const seat = createScoreBotSeat(name);
+  table.seats.push(seat);
+  table.idleSince = Date.now();
+  table.messages.unshift(`${name} joined the score battle.`);
+  return seat;
 }
 
 function joinScoreTable(table, user) {
@@ -1842,7 +1894,7 @@ function leaveScoreTable(table, userId) {
 
   table.messages.unshift(`${name} left the score battle.`);
   transferScoreHost(table);
-  if (!table.seats.some((entry) => entry.userId && !entry.left)) {
+  if (!table.seats.some((entry) => isScoreHumanSeat(entry) && !entry.left)) {
     scoreTables.delete(table.id);
     return { ok: true, deleted: true };
   }
@@ -1851,7 +1903,7 @@ function leaveScoreTable(table, userId) {
 
 function transferScoreHost(table) {
   if (table.seats.some((seat) => seat.userId === table.createdBy && !seat.left)) return;
-  const nextHost = table.seats.find((seat) => seat.userId && !seat.left);
+  const nextHost = table.seats.find((seat) => isScoreHumanSeat(seat) && !seat.left);
   if (!nextHost) return;
   table.createdBy = nextHost.userId;
   table.messages.unshift(`${nextHost.displayName} is now the score battle host.`);
@@ -1872,9 +1924,12 @@ function startScoreBattle(table) {
   if (!["waiting", "finished"].includes(table.phase)) {
     return { ok: false, error: "A score battle is already running." };
   }
-  const active = table.seats.filter((seat) => seat.userId && !seat.left && seat.ready);
+  const active = table.seats.filter(scoreSeatReadyForGame);
+  if (!active.some(isScoreHumanSeat)) {
+    return { ok: false, error: "At least one human player must be ready." };
+  }
   if (active.length < SCORE_BATTLE_MIN_PLAYERS) {
-    return { ok: false, error: "Need at least 2 ready players to start." };
+    return { ok: false, error: "Need at least 2 ready players or computer players to start." };
   }
 
   table.gameNumber += 1;
@@ -1911,6 +1966,7 @@ function startScoreBattle(table) {
   }
   beginScoreBattleRound(table);
   table.messages.unshift(`Score battle ${table.gameNumber} started with ${active.length} players.`);
+  processScoreBots(table);
   return { ok: true };
 }
 
@@ -2055,8 +2111,14 @@ function scoreEffectLogName(effect) {
 
 function chooseScoreEffect(table, userId, effectId, payload = {}) {
   if (table.phase !== "play-select") return { ok: false, error: "Effects can only be selected while choosing a play." };
-  const seat = activeScoreSeats(table).find((entry) => entry.userId === userId);
+  const seat = activeScoreSeats(table).find((entry) => !isScoreBotSeat(entry) && entry.userId === userId);
   if (!seat) return { ok: false, error: "You are watching this score battle." };
+  return chooseScoreEffectForSeat(table, seat, effectId, payload);
+}
+
+function chooseScoreEffectForSeat(table, seat, effectId, payload = {}) {
+  if (table.phase !== "play-select") return { ok: false, error: "Effects can only be selected while choosing a play." };
+  if (!seat || !activeScoreSeats(table).includes(seat)) return { ok: false, error: "This player is not active in the score battle." };
   if (!isCurrentScoreTurn(table, seat)) return { ok: false, error: "Wait for your turn to choose an effect." };
   if (seat.submitted) return { ok: false, error: "You already submitted your play this round." };
   if (seat.effectChosen) return { ok: false, error: "You already chose an effect this round." };
@@ -2339,7 +2401,7 @@ function startScoreTurn(table, seat) {
 
 function discardScoreCards(table, userId, rawCodes) {
   if (table.phase !== "play-select") return { ok: false, error: "Cards can only be discarded while choosing a play." };
-  const seat = activeScoreSeats(table).find((entry) => entry.userId === userId);
+  const seat = activeScoreSeats(table).find((entry) => !isScoreBotSeat(entry) && entry.userId === userId);
   if (!seat) return { ok: false, error: "You are watching this score battle." };
   if (!isCurrentScoreTurn(table, seat)) return { ok: false, error: "Wait for your turn to discard cards." };
   if (seat.submitted) return { ok: false, error: "You already submitted your play this round." };
@@ -2372,7 +2434,7 @@ function discardScoreCards(table, userId, rawCodes) {
 
 function submitScorePlay(table, userId, rawCodes) {
   if (table.phase !== "play-select") return { ok: false, error: "Plays are not being selected now." };
-  const seat = activeScoreSeats(table).find((entry) => entry.userId === userId);
+  const seat = activeScoreSeats(table).find((entry) => !isScoreBotSeat(entry) && entry.userId === userId);
   if (!seat) return { ok: false, error: "You are watching this score battle." };
   if (!isCurrentScoreTurn(table, seat)) return { ok: false, error: "Wait for your turn to play cards." };
   if (seat.submitted) return { ok: false, error: "You already submitted this round." };
@@ -2392,7 +2454,7 @@ function submitScorePlay(table, userId, rawCodes) {
 
 function previewScorePlay(table, userId, rawCodes) {
   if (table.phase !== "play-select") return { ok: false, error: "Plays are not being selected now." };
-  const seat = activeScoreSeats(table).find((entry) => entry.userId === userId);
+  const seat = activeScoreSeats(table).find((entry) => !isScoreBotSeat(entry) && entry.userId === userId);
   if (!seat) return { ok: false, error: "You are watching this score battle." };
   if (!isCurrentScoreTurn(table, seat)) return { ok: false, error: "Wait for your turn to preview cards." };
   if (seat.submitted) return { ok: false, error: "You already submitted this round." };
@@ -2552,9 +2614,175 @@ function scoreDiscardsBlocked(seat) {
   return Boolean(seat?.persistentEffects?.drawSword && seat.persistentEffects.drawSwordDiscardBlocked !== false);
 }
 
+function processScoreBots(table) {
+  let guard = 0;
+  while (guard++ < SCORE_BATTLE_MAX_SEATS * 3 && table.phase === "play-select") {
+    const seat = currentScoreTurnSeat(table);
+    if (!isScoreBotSeat(seat)) break;
+    try {
+      playScoreBotTurn(table, seat);
+    } catch (error) {
+      console.error("Score battle bot turn failed:", error);
+      table.messages.unshift(`${seat.displayName} could not decide and skipped this round.`);
+      seat.submitted = true;
+      maybeAdvanceScoreBattle(table);
+    }
+  }
+}
+
+function playScoreBotTurn(table, seat) {
+  chooseScoreBotEffect(table, seat);
+  const scoringEffect = scoreEffectForSeat(table, seat);
+  const best = scoreBattle.findBestPlay(seat.hand, table.community, scoringEffect, {
+    ...scoreContextForSeat(table, seat, { criticalExpected: true }),
+    requireCommunity: true
+  });
+  recordScorePlay(table, seat, best.cards, true);
+  maybeAdvanceScoreBattle(table);
+}
+
+function chooseScoreBotEffect(table, seat) {
+  if (!seat || seat.effectChosen || !Array.isArray(seat.effectOptions) || !seat.effectOptions.length) return;
+  const candidates = scoreBattle.shuffle(seat.effectOptions)
+    .map((effect) => ({
+      effect,
+      payload: scoreBotEffectPayload(table, seat, effect),
+      priority: scoreBotEffectPriority(effect)
+    }))
+    .filter((candidate) => candidate.payload.ok)
+    .sort((left, right) => right.priority - left.priority);
+
+  for (const candidate of candidates) {
+    const result = chooseScoreEffectForSeat(table, seat, candidate.effect.id, candidate.payload.payload);
+    if (result.ok) return;
+  }
+}
+
+function scoreBotEffectPriority(effect) {
+  const priorities = {
+    "shadow-targeting": 100,
+    "chaos-dice": 90,
+    "shadow-swap": 85,
+    "void-erosion": 80,
+    "world-mirror": 75,
+    "man-mirror": 70,
+    "pattern-reproduction": 65,
+    "void-suit": 60,
+    goelia: 55,
+    draven: 50,
+    "straight-flush-boost": 48,
+    "change-straight": 47,
+    "brutal-force": 45,
+    vigorous: 44,
+    "refresher-orb": 43,
+    "matthew-effect": 42,
+    "critical-hit": 41,
+    "infinity-edge": 40,
+    "giant-killer": 39,
+    "critical-switch-hand": 38,
+    "returning-fundamentals": 35,
+    "draw-sword": 34
+  };
+  return (priorities[effect.kind] || 30) + crypto.randomInt(10);
+}
+
+function scoreBotEffectPayload(table, seat, effect) {
+  if (effect.kind === "pattern-reproduction") return scoreBotPatternPayload(table, seat, effect);
+  if (effect.kind === "shadow-swap") return scoreBotShadowSwapPayload(table, seat, effect);
+  if (effect.kind === "void-erosion") return scoreBotVoidErosionPayload(table);
+  if (effect.kind === "shadow-targeting") return scoreBotShadowTargetPayload(table, seat);
+  return { ok: true, payload: {} };
+}
+
+function scoreBotPatternPayload(table, seat, effect) {
+  if (!Array.isArray(seat.hand) || seat.hand.length < 2) return { ok: false };
+  let best = null;
+  for (let first = 0; first < seat.hand.length; first += 1) {
+    for (let second = 0; second < seat.hand.length; second += 1) {
+      if (first === second) continue;
+      const simulatedHand = seat.hand.map(cloneScoreCard);
+      simulatedHand[first].suit = simulatedHand[second].suit;
+      const score = scoreBotBestPlayScore(table, seat, simulatedHand, table.community, effect);
+      if (!best || score > best.score) {
+        best = { score, codes: [seat.hand[first].code, seat.hand[second].code] };
+      }
+    }
+  }
+  return best ? { ok: true, payload: { targetCardCodes: best.codes } } : { ok: false };
+}
+
+function scoreBotShadowSwapPayload(table, seat, effect) {
+  if (!Array.isArray(seat.hand) || !seat.hand.length || !Array.isArray(table.community) || !table.community.length) {
+    return { ok: false };
+  }
+  let best = null;
+  for (let handIndex = 0; handIndex < seat.hand.length; handIndex += 1) {
+    for (let communityIndex = 0; communityIndex < table.community.length; communityIndex += 1) {
+      const simulatedHand = seat.hand.map(cloneScoreCard);
+      const simulatedCommunity = table.community.map(cloneScoreCard);
+      const handCard = simulatedHand[handIndex];
+      simulatedHand[handIndex] = simulatedCommunity[communityIndex];
+      simulatedCommunity[communityIndex] = handCard;
+      const score = scoreBotBestPlayScore(table, seat, simulatedHand, simulatedCommunity, effect);
+      if (!best || score > best.score) {
+        best = {
+          score,
+          codes: [seat.hand[handIndex].code, table.community[communityIndex].code]
+        };
+      }
+    }
+  }
+  return best ? { ok: true, payload: { targetCardCodes: best.codes } } : { ok: false };
+}
+
+function scoreBotVoidErosionPayload(table) {
+  if (!Array.isArray(table.community) || !table.community.length) return { ok: false };
+  const target = table.community.slice().sort((left, right) => scoreCardChipValue(left) - scoreCardChipValue(right))[0];
+  return { ok: true, payload: { targetCardCodes: [target.code] } };
+}
+
+function scoreBotShadowTargetPayload(table, seat) {
+  const ownCards = scoreBotLowestHandCards(seat, 2);
+  if (ownCards.length < 2) return { ok: false };
+  const target = activeScoreSeats(table)
+    .filter((entry) => entry.seatId !== seat.seatId && !entry.submitted && Array.isArray(entry.hand) && entry.hand.length >= 2)
+    .sort((left, right) => (
+      (Number(right.totalScore) || 0) - (Number(left.totalScore) || 0) ||
+      (Number(right.roundScore) || 0) - (Number(left.roundScore) || 0)
+    ))[0];
+  if (!target) return { ok: false };
+  return {
+    ok: true,
+    payload: {
+      targetCardCodes: ownCards.map((card) => card.code),
+      targetSeatId: target.seatId
+    }
+  };
+}
+
+function scoreBotBestPlayScore(table, seat, hand, community, effect) {
+  const best = scoreBattle.findBestPlay(hand, community, effect, {
+    ...scoreContextForSeat(table, seat, { criticalExpected: true }),
+    requireCommunity: true
+  });
+  return best.result.score;
+}
+
+function scoreBotLowestHandCards(seat, count) {
+  return (seat.hand || [])
+    .slice()
+    .sort((left, right) => scoreCardChipValue(left) - scoreCardChipValue(right))
+    .slice(0, count);
+}
+
+function cloneScoreCard(card) {
+  return { ...card };
+}
+
 function processScoreBattleTimeouts() {
   const now = Date.now();
   for (const table of scoreTables.values()) {
+    processScoreBots(table);
     if (!table.phaseDeadline || now < table.phaseDeadline) continue;
     if (table.phase === "play-select") {
       const seat = currentScoreTurnSeat(table);
@@ -2567,6 +2795,7 @@ function processScoreBattleTimeouts() {
         recordScorePlay(table, seat, best.cards, true);
       }
       maybeAdvanceScoreBattle(table);
+      processScoreBots(table);
       continue;
     }
     if (table.phase === "round-result") {
@@ -2574,6 +2803,7 @@ function processScoreBattleTimeouts() {
       else {
         table.round += 1;
         beginScoreBattleRound(table);
+        processScoreBots(table);
       }
     }
   }
@@ -2626,7 +2856,7 @@ function scoreStandings(seats) {
       totalScore: seat.totalScore,
       roundScore: seat.roundScore,
       rank,
-      coins: scoreCoinReward(rank)
+      coins: isScoreBotSeat(seat) ? 0 : scoreCoinReward(rank)
     };
     previous = standing;
     return standing;
@@ -2757,11 +2987,23 @@ function tomatoEventsForClient(table) {
 }
 
 function activeScoreSeats(table) {
-  return table.seats.filter((seat) => seat.inGame && seat.userId && !seat.left);
+  return table.seats.filter((seat) => seat.inGame && !seat.left && (isScoreHumanSeat(seat) || isScoreBotSeat(seat)));
 }
 
 function scoreVisibleSeats(table) {
   return table.seats.filter((seat) => !seat.left);
+}
+
+function isScoreBotSeat(seat) {
+  return Boolean(seat && seat.kind === "bot");
+}
+
+function isScoreHumanSeat(seat) {
+  return Boolean(seat && seat.kind !== "bot" && seat.userId);
+}
+
+function scoreSeatReadyForGame(seat) {
+  return Boolean(seat && !seat.left && seat.ready && (isScoreHumanSeat(seat) || isScoreBotSeat(seat)));
 }
 
 function pruneStaleScoreTables(now = Date.now()) {
@@ -2784,7 +3026,7 @@ function scoreTableSummary(table, user) {
     phase: table.phase,
     round: table.round,
     seats: seats.length,
-    readySeats: seats.filter((seat) => seat.ready).length,
+    readySeats: seats.filter(scoreSeatReadyForGame).length,
     maxSeats: SCORE_BATTLE_MAX_SEATS,
     youAreSeated: Boolean(youSeat),
     canJoin: table.phase === "waiting" && !youSeat && seats.length < SCORE_BATTLE_MAX_SEATS
@@ -2793,7 +3035,8 @@ function scoreTableSummary(table, user) {
 
 function scoreTableView(table, user) {
   const youSeat = table.seats.find((seat) => seat.userId === user.id && !seat.left);
-  const readySeats = table.seats.filter((seat) => seat.ready && seat.userId && !seat.left).length;
+  const readySeats = table.seats.filter(scoreSeatReadyForGame).length;
+  const readyHumanSeats = table.seats.filter((seat) => scoreSeatReadyForGame(seat) && isScoreHumanSeat(seat)).length;
   const preGame = ["waiting", "finished"].includes(table.phase);
   return {
     id: table.id,
@@ -2827,7 +3070,8 @@ function scoreTableView(table, user) {
     canJoin: table.phase === "waiting" && !youSeat && scoreVisibleSeats(table).length < SCORE_BATTLE_MAX_SEATS,
     canLeave: Boolean(youSeat),
     canReady: Boolean(youSeat && preGame),
-    canStart: Boolean(table.createdBy === user.id && preGame && readySeats >= SCORE_BATTLE_MIN_PLAYERS),
+    canAddBot: Boolean(table.createdBy === user.id && preGame && scoreVisibleSeats(table).length < SCORE_BATTLE_MAX_SEATS),
+    canStart: Boolean(table.createdBy === user.id && preGame && readyHumanSeats >= 1 && readySeats >= SCORE_BATTLE_MIN_PLAYERS),
     seats: table.seats.map((seat) => scoreSeatForClient(table, seat, youSeat)),
     standings: table.standings,
     tomatoEvents: tomatoEventsForClient(table),
@@ -2867,8 +3111,9 @@ function scoreSeatForClient(table, seat, youSeat) {
   } : null;
   return {
     seatId: seat.seatId,
+    kind: isScoreBotSeat(seat) ? "bot" : "human",
     displayName: seat.displayName,
-    avatar: seat.userId ? getUserAvatar(seat.userId) : seat.avatar || "",
+    avatar: isScoreHumanSeat(seat) ? getUserAvatar(seat.userId) : seat.avatar || "",
     ready: seat.ready,
     inGame: seat.inGame,
     left: seat.left,
@@ -2882,7 +3127,7 @@ function scoreSeatForClient(table, seat, youSeat) {
     isCurrentRoundLeader: Boolean((table.currentRoundLeaderSeatIds || []).includes(seat.seatId)),
     isPreviousRoundLeader: Boolean((table.previousRoundLeaderSeatIds || []).includes(seat.seatId)),
     isYou,
-    isHost: seat.userId === table.createdBy,
+    isHost: isScoreHumanSeat(seat) && seat.userId === table.createdBy,
     hand: isYou && seat.inGame ? seat.hand.map(cardForClient) : [],
     discardUsesLeft: isYou ? seat.discardUsesLeft : null,
     canDiscardThisRound: Boolean(isYou && isScoreTurn && seat.inGame && !seat.submitted && seat.discardUsesLeft > 0 && !scoreDiscardsBlocked(seat)),

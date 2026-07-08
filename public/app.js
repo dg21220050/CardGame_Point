@@ -2007,6 +2007,7 @@ function renderScoreSeat(seat, index) {
   }
   const badges = el("div", { className: "badges" });
   if (seat.isHost) badges.appendChild(el("span", { className: "badge gold" }, [t("Host")]));
+  if (seat.kind === "bot") badges.appendChild(el("span", { className: "badge" }, [t("CPU")]));
   if (seat.isYou) badges.appendChild(el("span", { className: "badge" }, [t("You")]));
   if (seat.isScoreTurn) badges.appendChild(el("span", { className: "badge gold" }, [t("Score turn")]));
   if (seat.isScoreTurn && state.scoreTable?.phase === "play-select") {
@@ -2266,6 +2267,13 @@ function renderScoreActionPanel(table) {
       type: "button",
       onclick: () => setScoreReady(!you.ready)
     }, [you.ready ? t("Cancel score battle ready") : t("Ready for score battle")]));
+  }
+  if (table.canAddBot) {
+    controls.push(el("button", {
+      className: "secondary",
+      type: "button",
+      onclick: addScoreBot
+    }, [t("Add CPU")]));
   }
   if (table.isHost && table.canStart) {
     controls.push(el("button", { type: "button", onclick: startScoreBattle }, [table.phase === "finished" ? t("Next score battle") : t("Start score battle")]));
@@ -2921,6 +2929,18 @@ async function startScoreBattle() {
   if (!state.scoreTable) return;
   try {
     const response = await api(`/api/score-tables/${state.scoreTable.id}/start`, { method: "POST" });
+    setCurrentScoreTable(response.table);
+    await refreshScoreTables(false);
+  } catch (error) {
+    state.error = error.message;
+  }
+  render();
+}
+
+async function addScoreBot() {
+  if (!state.scoreTable) return;
+  try {
+    const response = await api(`/api/score-tables/${state.scoreTable.id}/add-bot`, { method: "POST" });
     setCurrentScoreTable(response.table);
     await refreshScoreTables(false);
   } catch (error) {
