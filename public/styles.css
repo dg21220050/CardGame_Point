@@ -1003,6 +1003,14 @@ input:focus {
   inset: 38% 11% auto;
 }
 
+.score-community-area {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.7rem;
+  transform: translateY(-3rem);
+}
+
 .score-felt.seats-2 .score-center-board {
   inset: 31% 11% auto;
 }
@@ -1327,14 +1335,20 @@ input:focus {
 }
 
 .round-effect-strip {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
+  display: grid;
   gap: 0.35rem;
-  max-width: min(44rem, 90%);
+  width: min(16rem, 24vw);
+  max-height: 8.4rem;
+  overflow: auto;
+  padding: 0.45rem;
+  border: 1px solid rgba(241, 198, 75, 0.34);
+  border-radius: 8px;
+  background: rgba(16, 23, 21, 0.72);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
 }
 
 .round-effect-pill {
+  display: block;
   padding: 0.32rem 0.55rem;
   border: 1px solid rgba(241, 198, 75, 0.48);
   border-radius: 7px;
@@ -1342,6 +1356,7 @@ input:focus {
   background: rgba(96, 65, 10, 0.5);
   font-size: 0.78rem;
   font-weight: 900;
+  line-height: 1.25;
 }
 
 .battle-result {
@@ -1863,11 +1878,55 @@ button.battle-card:hover {
   margin: 1rem 0;
 }
 
+.score-calc-card-wrap {
+  display: grid;
+  justify-items: center;
+  gap: 0.35rem;
+}
+
 .score-calc-cards .battle-card {
   width: clamp(4.5rem, 7vw, 6.6rem);
   opacity: 0;
   animation: scoreCardReveal 460ms ease forwards;
   animation-delay: calc(0.25s + var(--card-index, 0) * 250ms);
+}
+
+.score-calc-card-notes {
+  display: grid;
+  justify-items: center;
+  gap: 0.22rem;
+  max-width: 8.4rem;
+  opacity: 0;
+  animation: calcStepReveal 360ms ease forwards;
+  animation-delay: calc(0.42s + var(--card-index, 0) * 250ms);
+}
+
+.score-calc-card-chip {
+  padding: 0.18rem 0.38rem;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  color: #fff7d8;
+  background: rgba(0, 0, 0, 0.26);
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.score-calc-card-chip.is-muted {
+  color: var(--muted);
+}
+
+.score-calc-card-chip.is-crit {
+  border-color: rgba(241, 198, 75, 0.7);
+  color: #fff5c9;
+  background: rgba(156, 91, 12, 0.6);
+}
+
+.score-calc-card-chip.is-expected-crit {
+  border-color: rgba(89, 166, 178, 0.56);
+  color: #d8faff;
+  background: rgba(89, 166, 178, 0.24);
 }
 
 .score-calc-effect {
@@ -2360,6 +2419,17 @@ button.battle-card:hover {
 
   .score-center-board {
     inset: 42% 3% auto;
+  }
+
+  .score-community-area {
+    gap: 0.45rem;
+    transform: translateY(-2.15rem);
+  }
+
+  .round-effect-strip {
+    width: min(11rem, 32vw);
+    max-height: 6.5rem;
+    padding: 0.35rem;
   }
 
   .score-seat {

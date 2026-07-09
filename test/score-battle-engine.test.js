@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { createDeck, createEffectOptions, findBestPlay, scorePlay } = require("../score-battle-engine");
+const { createDeck, createEffectOptions, criticalProfileForEffects, findBestPlay, scorePlay } = require("../score-battle-engine");
 
 function cards(codes) {
   const byCode = new Map(createDeck().map((card) => [card.code, card]));
@@ -123,7 +123,8 @@ test("effect option generation can exclude once-per-game effects", () => {
       "infinity-edge",
       "giant-killer",
       "matthew-effect",
-      "critical-switch-hand"
+      "critical-switch-hand",
+      "dance-illusions"
     ];
     const options = createEffectOptions({ excludedKinds });
     assert.equal(options.some((effect) => excludedKinds.includes(effect.kind)), false);
@@ -221,6 +222,10 @@ test("new persistent and late-game score battle effects apply their scoring rule
   const switchExpected = scorePlay(high, null, { persistentEffects: { criticalSwitchHand: true }, criticalExpected: true });
   assert.equal(switchExpected.chips, 13.0625);
   assert.equal(switchExpected.score, 13);
+
+  const danceProfile = criticalProfileForEffects({ danceIllusions: true });
+  assert.equal(danceProfile.chance, 0.25);
+  assert.equal(danceProfile.multiplier, 1.75);
 
   const brutal = scorePlay(high, { kind: "brutal-force" });
   assert.equal(brutal.chips, 36);

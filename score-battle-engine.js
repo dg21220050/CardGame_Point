@@ -166,7 +166,8 @@ function createEffectOptions(options = {}) {
     () => ({ kind: "refresher-orb" }),
     () => ({ kind: "giant-killer" }),
     () => ({ kind: "matthew-effect" }),
-    () => ({ kind: "critical-switch-hand" })
+    () => ({ kind: "critical-switch-hand" }),
+    () => ({ kind: "dance-illusions" })
   ];
 
   const selected = [];
@@ -467,6 +468,7 @@ function criticalProfileForEffects(persistentEffects = {}) {
     multiplier = Math.max(multiplier, 2.25);
   }
   if (persistentEffects.criticalSwitchHand) chance += 0.25;
+  if (persistentEffects.danceIllusions) chance += 0.25;
   return {
     chance: Math.min(1, Math.max(0, chance)),
     multiplier

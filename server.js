@@ -38,10 +38,10 @@ const MAX_SCORE_CHAT_MESSAGES = 100;
 const UNSTARTED_TABLE_TTL_MS = 5 * 60 * 1000;
 const SCORE_TABLE_IDLE_TTL_MS = 10 * 60 * 1000;
 const TABLE_PRUNE_INTERVAL_MS = 15 * 1000;
-const TOMATO_LIMIT = 5;
-const TOMATO_WINDOW_MS = 5 * 1000;
-const TOMATO_COOLDOWN_MS = 5 * 1000;
 const TOMATO_EVENT_TTL_MS = 8 * 1000;
+const DEFAULT_TOMATO_ATTACK_SPEED = 1;
+const DANCE_ILLUSIONS_ATTACK_SPEED_BONUS = 0.65;
+const MIN_TOMATO_INTERVAL_MS = 200;
 const SCORE_BATTLE_MAX_SEATS = 6;
 const SCORE_BATTLE_MIN_PLAYERS = 2;
 const SCORE_BATTLE_ROUNDS = 5;
@@ -64,7 +64,8 @@ const SCORE_BATTLE_ONCE_PER_GAME_EFFECTS = new Set([
   "infinity-edge",
   "giant-killer",
   "matthew-effect",
-  "critical-switch-hand"
+  "critical-switch-hand",
+  "dance-illusions"
 ]);
 
 const sessions = new Map();
@@ -2142,9 +2143,8 @@ function scoreRoundHandSize(round) {
 }
 
 function dealScoreCommunity(table) {
-  const heldCodes = new Set(activeScoreSeats(table).flatMap((seat) => seat.hand.map((card) => card.code)));
-  const burnedCodes = new Set((table.burnedCards || []).map((card) => card.code));
-  const candidates = scoreBattle.createDeck().filter((card) => !heldCodes.has(card.code) && !burnedCodes.has(card.code));
+  const blocked = scoreUnavailableCardCodes(table);
+  const candidates = scoreBattle.createDeck().filter((card) => !blocked.has(card.code));
   if (candidates.length < 5) throw new Error("Not enough cards available for the community board.");
   return scoreBattle.shuffle(candidates).slice(0, 5);
 }
@@ -2157,31 +2157,36 @@ function topUpScoreHand(table, seat, targetSize) {
 }
 
 function drawScoreCards(table, seat, count) {
-  const blocked = new Set([
-    ...table.community.map((card) => card.code),
-    ...(table.burnedCards || []).map((card) => card.code),
-    ...seat.hand.map((card) => card.code),
-    ...seat.discarded.map((card) => card.code),
-    ...seat.played.map((card) => card.code)
-  ]);
+  const blocked = scoreUnavailableCardCodes(table, { historySeat: seat });
   const candidates = scoreBattle.createDeck().filter((card) => !blocked.has(card.code));
   if (candidates.length < count) throw new Error("This player has no unique cards left to draw.");
   return scoreBattle.shuffle(candidates).slice(0, count);
 }
 
 function drawScoreCommunityCards(table, count) {
-  const blocked = new Set([
-    ...table.community.map((card) => card.code),
-    ...(table.burnedCards || []).map((card) => card.code),
-    ...activeScoreSeats(table).flatMap((seat) => [
-      ...seat.hand.map((card) => card.code),
-      ...seat.discarded.map((card) => card.code),
-      ...seat.played.map((card) => card.code)
-    ])
-  ]);
+  const blocked = scoreUnavailableCardCodes(table);
   const candidates = scoreBattle.createDeck().filter((card) => !blocked.has(card.code));
   if (candidates.length < count) throw new Error("Not enough unique cards left for the community board.");
   return scoreBattle.shuffle(candidates).slice(0, count);
+}
+
+function scoreUnavailableCardCodes(table, options = {}) {
+  const blocked = new Set();
+  const addCards = (cards) => {
+    for (const card of Array.isArray(cards) ? cards : []) {
+      if (card?.code) blocked.add(card.code);
+    }
+  };
+  addCards(table.community);
+  addCards(table.burnedCards);
+  for (const seat of activeScoreSeats(table)) {
+    addCards(seat.hand);
+    if (options.historySeat && seat.seatId === options.historySeat.seatId) {
+      addCards(seat.discarded);
+      addCards(seat.played);
+    }
+  }
+  return blocked;
 }
 
 function findScoreHandCard(seat, code) {
@@ -2241,7 +2246,8 @@ function scoreEffectLogName(effect) {
     "refresher-orb": "Refresher Orb",
     "giant-killer": "Giant Killer",
     "matthew-effect": "Matthew effect",
-    "critical-switch-hand": "Critical Switch Hand"
+    "critical-switch-hand": "Critical Switch Hand",
+    "dance-illusions": "Dance of Illusions"
   };
   if (effect.kind === "void-suit") return `${effect.suit} Void Seal`;
   return names[effect.kind] || effect.kind;
@@ -2336,6 +2342,7 @@ function countScoreTomatoHits(table, seat, seatField, beforeRoundOnly) {
     Number(hit.gameNumber) === Number(table.gameNumber) &&
     Number(hit.round) > 0 &&
     (beforeRoundOnly ? Number(hit.round) < currentRound : Number(hit.round) <= currentRound) &&
+    (seatField !== "fromSeatId" || hit.countsForThrower !== false) &&
     hit[seatField] === seat.seatId
   )).length;
 }
@@ -2488,6 +2495,10 @@ function applyScoreEffect(table, seat, effect, payload) {
   }
   if (effect.kind === "critical-switch-hand") {
     seat.persistentEffects.criticalSwitchHand = true;
+    return { ok: true, effect };
+  }
+  if (effect.kind === "dance-illusions") {
+    seat.persistentEffects.danceIllusions = true;
     return { ok: true, effect };
   }
   return { ok: true, effect };
@@ -2823,6 +2834,7 @@ function scoreBotEffectPriority(effect) {
     "infinity-edge": 40,
     "giant-killer": 39,
     "critical-switch-hand": 38,
+    "dance-illusions": 37,
     "returning-fundamentals": 35,
     "draw-sword": 34
   };
@@ -3059,6 +3071,30 @@ function recordScoreBattleHistory(table) {
   writeUsers();
 }
 
+function scoreAttackSpeedProfileForSeat(seat) {
+  let speed = DEFAULT_TOMATO_ATTACK_SPEED;
+  const bonuses = [];
+  if (seat?.persistentEffects?.danceIllusions) {
+    speed += DANCE_ILLUSIONS_ATTACK_SPEED_BONUS;
+    bonuses.push({ kind: "dance-illusions", amount: DANCE_ILLUSIONS_ATTACK_SPEED_BONUS });
+  }
+  speed = Math.max(0.1, Math.round(speed * 100) / 100);
+  return {
+    speed,
+    intervalMs: tomatoIntervalMsForAttackSpeed(speed),
+    bonuses
+  };
+}
+
+function tomatoIntervalMsForAttackSpeed(speed) {
+  const safeSpeed = Math.max(0.1, Number(speed) || DEFAULT_TOMATO_ATTACK_SPEED);
+  return Math.max(MIN_TOMATO_INTERVAL_MS, Math.round(1000 / safeSpeed));
+}
+
+function tomatoCooldownSeconds(waitMs) {
+  return Math.max(0.1, Math.ceil(Math.max(0, waitMs) / 100) / 10);
+}
+
 function recordTomatoThrow(table, userId, targetSeatId) {
   pruneTomatoEvents(table);
   const from = table.seats.find((seat) => seat.userId === userId && !seat.left);
@@ -3070,21 +3106,17 @@ function recordTomatoThrow(table, userId, targetSeatId) {
   const now = Date.now();
   table.tomatoBuckets = table.tomatoBuckets || Object.create(null);
   const key = from.userId || from.seatId;
-  const bucket = table.tomatoBuckets[key] || { times: [], cooldownUntil: 0 };
-  bucket.times = bucket.times.filter((time) => now - Number(time) < TOMATO_WINDOW_MS);
-  if (Number(bucket.cooldownUntil) > now) {
+  const bucket = table.tomatoBuckets[key] || { lastThrowAt: 0 };
+  const attackSpeedProfile = scoreAttackSpeedProfileForSeat(from);
+  const intervalMs = attackSpeedProfile.intervalMs;
+  const waitMs = Number(bucket.lastThrowAt || 0) + intervalMs - now;
+  if (waitMs > 0) {
     table.tomatoBuckets[key] = bucket;
-    const seconds = Math.max(1, Math.ceil((bucket.cooldownUntil - now) / 1000));
-    return { ok: false, status: 429, error: `Tomato cooldown: ${seconds}s.` };
-  }
-  if (bucket.times.length >= TOMATO_LIMIT) {
-    bucket.cooldownUntil = now + TOMATO_COOLDOWN_MS;
-    table.tomatoBuckets[key] = bucket;
-    return { ok: false, status: 429, error: "Tomato cooldown: 5s." };
+    return { ok: false, status: 429, error: `Tomato cooldown: ${tomatoCooldownSeconds(waitMs)}s.` };
   }
 
-  bucket.times.push(now);
-  if (bucket.times.length >= TOMATO_LIMIT) bucket.cooldownUntil = now + TOMATO_COOLDOWN_MS;
+  bucket.lastThrowAt = now;
+  bucket.attackSpeed = attackSpeedProfile.speed;
   table.tomatoBuckets[key] = bucket;
 
   const event = {
@@ -3103,12 +3135,14 @@ function recordTomatoThrow(table, userId, targetSeatId) {
 function recordScoreTomatoHit(table, from, target, now) {
   if (!String(table.id || "").startsWith("score-")) return;
   if (!table.gameNumber || !table.round || ["waiting", "finished"].includes(table.phase)) return;
+  const countsForThrower = !target?.persistentEffects?.danceIllusions;
   table.scoreTomatoHits = (table.scoreTomatoHits || []).filter((hit) => Number(hit.gameNumber) === Number(table.gameNumber));
   table.scoreTomatoHits.push({
     gameNumber: table.gameNumber,
     round: table.round,
     fromSeatId: from.seatId,
     toSeatId: target.seatId,
+    countsForThrower,
     createdAt: now
   });
 }
@@ -3230,6 +3264,7 @@ function scoreSeatForClient(table, seat, youSeat) {
   const isScoreTurn = isCurrentScoreTurn(table, seat);
   const tomatoCounts = scoreTomatoCountsForSeat(table, seat);
   const criticalProfile = scoreBattle.criticalProfileForEffects(seat.persistentEffects || {});
+  const attackSpeedProfile = scoreAttackSpeedProfileForSeat(seat);
   const result = seat.lastResult ? {
     handId: seat.lastResult.handId,
     handName: seat.lastResult.handName,
@@ -3269,6 +3304,7 @@ function scoreSeatForClient(table, seat, youSeat) {
     tomatoCounts,
     persistentEffects: scorePersistentEffectsForClient(seat),
     criticalProfile,
+    attackSpeedProfile,
     winCount: Number(seat.winCount) || 0,
     wonLastGame: Boolean((table.lastWinnerSeatIds || []).includes(seat.seatId) && table.lastVictoryGameNumber === table.gameNumber),
     isScoreTurn,
@@ -3314,6 +3350,7 @@ function scorePersistentEffectsForClient(seat) {
   if (persistent.giantKiller) effects.push({ kind: "giant-killer" });
   if (persistent.matthewEffect) effects.push({ kind: "matthew-effect" });
   if (persistent.criticalSwitchHand) effects.push({ kind: "critical-switch-hand" });
+  if (persistent.danceIllusions) effects.push({ kind: "dance-illusions" });
   return effects;
 }
 

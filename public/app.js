@@ -272,6 +272,14 @@ Object.assign(zhText, {
   "Persistent effects and each player's current crit rate are visible on the table.": "牌桌上现在会显示每位玩家的持续特效和当前暴击率。"
 });
 
+Object.assign(zhText, {
+  "Balance tuning and scoring logic update.": "\u5e73\u8861\u6027\u8c03\u6574\u4e0e\u8ba1\u5206\u903b\u8f91\u4fee\u6539",
+  "Base scoring now only counts cards that form the made hand, unless a specific effect adds bonus chips.": "\u5e95\u5c42\u903b\u8f91\u4e2d\u76ee\u524d\u53ea\u6709\u51d1\u51fa\u7684\u724c\u578b\u7684\u724c\u624d\u8ba1\u5206\uff0c\u9664\u975e\u6709\u7279\u5b9a\u7279\u6548\u52a0\u6210\u3002",
+  "Attack speed": "\u653b\u901f",
+  "Crit bonus": "\u66b4\u51fb\u52a0\u6210",
+  "Expected crit": "\u66b4\u51fb\u671f\u671b"
+});
+
 const zhPhase = {
   waiting: "等待中",
   preflop: "翻牌前",
@@ -1046,6 +1054,8 @@ function appendUpdateNotice() {
         el("li", {}, [t("Password changes and admin feedback are available from Profile.")]),
         el("li", {}, [t("Account popups now keep typed text while the table refreshes.")]),
         el("li", {}, [t("Score Battle table chat is now available from the right panel.")]),
+        el("li", {}, [t("Balance tuning and scoring logic update.")]),
+        el("li", {}, [t("Base scoring now only counts cards that form the made hand, unless a specific effect adds bonus chips.")]),
         el("li", {}, [t("Balance tuning and scoring logic now count only cards that form the made hand, unless an effect adds bonus chips.")]),
         el("li", {}, [t("Traditional card-table mode has been removed; the app now focuses on Score Battle.")]),
         el("li", {}, [t("New critical, discard, and comeback effects are available in Score Battle.")]),
@@ -1065,6 +1075,8 @@ function updateHistoryEntries() {
         "Account popups now keep typed text while the table refreshes.",
         "Score Battle hosts can now add CPU players.",
         "Score Battle table chat is now available from the right panel.",
+        "Balance tuning and scoring logic update.",
+        "Base scoring now only counts cards that form the made hand, unless a specific effect adds bonus chips.",
         "Balance tuning and scoring logic now count only cards that form the made hand, unless an effect adds bonus chips.",
         "Persistent effects and each player's current crit rate are visible on the table.",
         "Traditional card-table mode has been removed; the app now focuses on Score Battle.",
@@ -1344,6 +1356,27 @@ function renderBattleScoreOverlayHost() {
   if (overlayNode) host.appendChild(overlayNode);
 }
 
+function renderScoreCalcCardValue(value = {}) {
+  const bonuses = Array.isArray(value.bonuses) ? value.bonuses : [];
+  const criticalBonus = bonuses.find((bonus) => bonus.kind === "critical-hit");
+  const otherBonus = bonuses
+    .filter((bonus) => bonus.kind !== "critical-hit")
+    .reduce((sum, bonus) => sum + Number(bonus.amount || 0), 0);
+  const bonusText = otherBonus === 0 ? "" : ` ${otherBonus > 0 ? "+" : "-"} ${formatCompactNumber(Math.abs(otherBonus))}`;
+  const beforeCritical = (Number(value.finalChips) || 0) - Number(criticalBonus?.amount || 0);
+  const subtotal = formatCompactNumber(beforeCritical);
+  const detail = value.scoresHand === false
+    ? `${t("Base chips")} 0${bonusText} = ${subtotal}`
+    : `${t("Base chips")} ${formatCompactNumber(value.baseChips ?? 0)}${bonusText} = ${subtotal}`;
+  return el("div", { className: "score-calc-card-notes" }, [
+    el("span", { className: "score-calc-card-chip" }, [detail]),
+    value.scoresHand === false ? el("span", { className: "score-calc-card-chip is-muted" }, [t("Not part of scoring hand")]) : "",
+    criticalBonus ? el("span", { className: `score-calc-card-chip ${criticalBonus.critical ? "is-crit" : "is-expected-crit"}` }, [
+      `${t(criticalBonus.critical ? "Crit bonus" : "Expected crit")} +${formatCompactNumber(criticalBonus.amount)}`
+    ]) : ""
+  ]);
+}
+
 function buildBattleScoreOverlay() {
   const overlay = state.battleScoreOverlay;
   if (!overlay || !overlay.result) return null;
@@ -1388,10 +1421,15 @@ function buildBattleScoreOverlay() {
         el("h2", { id: "score-calc-title" }, [`${overlay.displayName} - ${t("Scoring detail")}`]),
         el("span", { className: "pill" }, [result.automatic ? t("Automatic") : t("Submitted")])
       ]),
-      el("div", { className: "score-calc-cards" }, (result.cards || []).map((card, index) => renderBattleCard(card, "result", state.scoreTable, {
-        extraClass: card.source === "community" ? "is-community-played" : "",
+      el("div", { className: "score-calc-cards" }, (result.cards || []).map((card, index) => el("div", {
+        className: "score-calc-card-wrap",
         style: `--card-index: ${index}`
-      }))),
+      }, [
+        renderBattleCard(card, "result", state.scoreTable, {
+          extraClass: card.source === "community" ? "is-community-played" : ""
+        }),
+        renderScoreCalcCardValue(valueByCode.get(card.code) || {})
+      ]))),
       el("div", { className: "score-calc-effect" }, [
         el("strong", {}, [result.effect ? battleEffectName(result.effect) : t("No effect")]),
         el("span", {}, [result.effect ? battleEffectDescription(result.effect) : ""])
@@ -1506,30 +1544,30 @@ function battleEffectRuleText() {
       "红色增幅：已出的红桃和方块每张 +3 点。",
       "对子引擎：只有牌型为一对或两对时，倍率 +2。",
       "同花引擎：只有牌型为同花或同花顺时，倍率 +1.5。",
-      "虚无封印：从选择者开始，本回合之后顺序出牌玩家的指定花色点数 -3，最低降到 0；选择者本人打出的该花色牌不扣点，改为每张 +4 点，且只要打出的 5 张牌中包含该花色，倍率 +1。",
-      "花色复制：按顺序选择两张自己的手牌，第一张手牌复制第二张手牌的花色；本回合倍率 +2.5。",
-      "暗隐置换：选择一张自己的手牌与一张公共牌交换，交换后的公共牌会影响本回合之后顺序出牌的玩家；本回合总点数 +5，倍率 +1。",
-      "虚空侵蚀：选择并移除一张公共牌，然后从牌库补发一张新的公共牌，新的公共牌会影响之后顺序出牌的玩家；本回合总点数 +5，倍率 +1。",
-      "镜中世界：将 5 张公共牌全部变成点数互补的牌，A/K 互换，Q/2、J/3、10/4、9/5、8/6 互换，7 不变；变化后的公共牌会影响之后顺序出牌的玩家；本回合总点数 +6，倍率 +2。",
+      "虚无封印：从选择者开始，本回合之后出牌玩家的指定花色点数 -3，最低降到 0；选择者本人打出该花色牌不扣点数，改为每张 +4 点，且只要打出的 5 张牌中包含该花色，倍率 +1。",
+      "花色复制：按顺序选择两张自己的手牌，第一张手牌复制为第二张手牌的花色；本回合倍率 +2.5。",
+      "暗隐置换：选择一张自己的手牌与一张公共牌交换；本回合总点数 +5，倍率 +1。",
+      "虚空侵蚀：选择并重发一张公共牌；本回合总点数 +5，倍率 +1。",
+      "镜中世界：将 5 张公共牌全部变成点数互补的牌，A/K 互换，Q/2、J/3、10/4、9/5、8/6 互换，7 不变；本回合总点数 +6，倍率 +2。",
       "镜中人：将自己的全部手牌变成点数互补的牌，互补规则与镜中世界相同；本回合总点数 +6，倍率 +2。",
       "德莱联盟：本回合倍率 +3.5；若该玩家在本回合得分最高，回合结算后额外获得当前所有玩家中最高总分的 20%。",
       "歌莉娅：将自己的手牌在不改变花色的前提下，变为 8、9、10、J、Q、K 中不完全相同的点数。",
       "虚空索敌：选择自己的两张手牌，并指定一名本回合尚未出牌的玩家，与其随机两张手牌交换；本回合倍率 +1，且总点数额外加上换得两张手牌的点数和。",
       "混沌骰子：将本回合尚未出牌的所有玩家，包括自己在内，手牌全部随机重发；选择者本回合倍率 +1，且总点数额外加上本次所有被重发手牌总数 x0.5。",
-      "番茄大王：计算该玩家在本局内、本回合之前被其他玩家投掷番茄命中的总次数；本回合总点数额外加上该次数，且倍率 +1。每位玩家每局只能选择一次，选过后后续回合不再进入该玩家的特效池。",
-      "番茄射手：计算该玩家在本局内、本回合之前向其他玩家投掷番茄的总次数；本回合总点数额外加上该次数，且倍率 +0.5。每位玩家每局只能选择一次，选过后后续回合不再进入该玩家的特效池。",
+      "番茄大王：倍率 +1；计算该玩家在本局内、本回合之前被其他玩家投掷番茄命中的总次数；本回合总分额外加上该次数×5。",
+      "番茄射手：倍率 +1；计算该玩家在本局内、本回合之前向其他玩家投掷番茄的总次数；本回合总分额外加上该次数×5。",
       "同花大顺：当玩家打出同花顺时，最终分额外 +1000。",
       "质变：顺子：选择后若打出的牌型为顺子，该手牌按同花顺倍率计算。每位玩家每局只能选择一次。",
       "叠角龙：选择该特效的玩家本回合倍率 +3；本局内该玩家被番茄击中和向别人投掷番茄的有效计数变为 3 倍，包括选择前已有计数。每位玩家每局只能选择一次。",
-      "面包和黄油：从本回合开始，本局之后所有顺子牌型倍率 +2。每位玩家每局只能选择一次。",
-      "面包和奶酪：从本回合开始，本局之后所有三条牌型倍率 +3。每位玩家每局只能选择一次。",
-      "面包和果酱：从本回合开始，本局之后所有两对牌型倍率 +4。每位玩家每局只能选择一次。",
-      "星界躯体：本回合最终分额外 +1000；但从本回合开始，本局之后每回合最终得分降低至 50% 并取整数。每位玩家每局只能选择一次。",
-      "钢化番茄：从本回合开始持续判定；若选择时未达标则暂不发动，之后任意回合有效番茄命中次数超过 30 或有效投掷次数超过 50 时，每回合点数额外加入 命中次数 x0.5 + 投掷次数 x0.2，并保留一位小数。每位玩家每局只能选择一次。",
-      "回归基本功：只会在第 2/3 回合出现；从本回合开始，本局之后不能再选择任何特效；第 2/3/4/5 回合分别获得 +15/+20/+20/+22 点数和 +1/+1.5/+1.5/+1.75 倍率。每位玩家每局只能选择一次。",
-      "亮出你的剑：只会在第 2/3 回合出现；从本回合开始，本局之后不能再弃牌；第 2/3/4/5 回合分别获得 +10/+15/+15/+18 点数和 +2/+2.5/+2.5/+2.75 倍率。每位玩家每局只能选择一次。若之后选择刷新球，则重新允许弃牌但保留亮剑加成。",
-      "关键暴击：从本回合开始，本局之后所有回合，每张打出的牌各有 50% 几率暴击；暴击牌在点数计算时乘以 1.75。预估分使用期望值显示，正式结算会逐牌随机。",
-      "无尽之刃：从本回合开始，本局之后所有回合暴击率 +25%，并将暴击倍率提高到 2.25。暴击率与其他暴击特效加算，超过 100% 按 100% 计算。每位玩家每局只能选择一次。",
+      "面包和黄油：从本回合开始，该玩家所有顺子牌型倍率 +2，基础点数+3。",
+      "面包和奶酪：从本回合开始，该玩家所有三条牌型倍率 +1，基础点数+12。",
+      "面包和果酱：从本回合开始，该玩家所有两对牌型倍率 +2，基础点数+5。",
+      "星界躯体：本回合最终分额外 +1000；但从本回合开始，本局之后每回合最终得分降低至 50% 。每位玩家每局只能选择一次。",
+      "钢化番茄：从本回合开始算起，该玩家任意回合有效番茄命中次数超过 30 或有效投掷次数超过 50 时，每回合总分额外加入（命中次数 x0.5 + 投掷次数 x0.2）×5。每位玩家每局只能选择一次。",
+      "回归基本功：只会在第 2/3 回合出现；从本回合开始，本局之后不能再选择任何特效；第 2/3/4/5 回合分别获得 +12/+15/+15/+18 点数和 +1.25/+1.5/+1.5/+1.75 倍率。每位玩家每局只能选择一次。",
+      "亮出你的剑：只会在第 2/3 回合出现；从本回合开始，本局之后不能再弃牌；第 2/3/4/5 回合分别获得 +12/+12/+12/+15 点数和 +1.5/+1.75/+1.75/+2 倍率。每位玩家每局只能选择一次。若之后选择刷新球，则重新允许弃牌但保留亮剑加成。",
+      "关键暴击：从本回合开始，暴击率 +50%。暴击牌在点数计算时乘以 1.75。预估分使用期望值显示，正式结算会逐牌随机。每位玩家每局只能选择一次。",
+      "无尽之刃：从本回合开始，暴击率 +25%，并将暴击倍率提高到 2.25。每位玩家每局只能选择一次。",
       "残暴之力：本回合总点数 +25，倍率 +1。",
       "大力：本回合计分点数之和 x1.5 后再乘以牌型倍率。",
       "刷新球：本回合倍率 +1，且本局额外获得 4 次弃牌机会；若此前被亮出你的剑禁止弃牌，则重新允许弃牌，且不取消亮剑的点数和倍率加成。",
@@ -1584,6 +1622,7 @@ function battleEffectRuleText() {
 function battleBalanceRuleText() {
   if (isZh()) {
     return [
+      "\u5e7b\u5f71\u4e4b\u821e\uff1a\u66b4\u51fb\u7387 +25%\uff0c\u653b\u51fb\u901f\u5ea6 +65%\uff0c\u5e76\u8fdb\u5165\u5e7d\u7075\u72b6\u6001\uff1a\u5411\u8be5\u73a9\u5bb6\u6295\u63b7\u756a\u8304\u65f6\uff0c\u547d\u4e2d\u4e0d\u8ba1\u5165\u6295\u63b7\u8005\u7684\u6295\u63b7\u6b21\u6570\uff0c\u4f46\u4f1a\u8ba1\u5165\u8be5\u73a9\u5bb6\u88ab\u6295\u63b7\u7684\u6b21\u6570\u3002\u6bcf\u5c40\u4e00\u6b21\u3002",
       "基础计分：高牌只计入最高牌；一对只计入对子两张；两对只计入两对四张；三条只计入三张；四条只计入四张；顺子、同花、葫芦、同花顺计入全部五张。",
       "未参与牌型的牌基础点数为 0，但同花色点数增强、点数增强、红色增幅、虚无封印拥有者加成等逐牌加点特效仍可让这些牌获得额外点数。",
       "暴击只会在参与牌型计分的牌上判定；不参与牌型的牌即使通过特效获得额外点数，也不会因此触发暴击。",
@@ -1602,26 +1641,26 @@ function battleBalanceRuleText() {
       "歌莉娅：自己的手牌在不改变花色的前提下变为 8、9、10、J、Q、K 中不完全相同的点数。",
       "虚空索敌：选择自己的两张手牌并指定一名尚未出牌的目标，与其随机两张手牌交换；本回合倍率 +1，并额外加上换得两张牌的点数和。",
       "混沌骰子：将所有尚未出牌玩家的手牌重发；选择者本回合倍率 +1，并额外加上重发手牌总数 x0.5 点。",
-      "番茄大王：本回合倍率 +1；本局内本回合之前被其他玩家投掷番茄命中的次数 x5 加到手牌点数。每局一次。",
-      "番茄射手：本回合倍率 +1；本局内本回合之前向其他玩家投掷番茄的次数 x5 加到手牌点数。每局一次。",
+      "番茄大王：本回合倍率 +1；本局内本回合之前被其他玩家投掷番茄命中的次数 x5 加到手牌点数。",
+      "番茄射手：本回合倍率 +1；本局内本回合之前向其他玩家投掷番茄的次数 x5 加到手牌点数。",
       "同花大顺：打出同花顺时，最终分 +1000。",
       "质变：顺子：若打出顺子，按同花顺倍率计算。每局一次。",
-      "双角龙：本回合倍率 +3；本局番茄命中和投掷有效计数变为 3 倍，包括选择前已有计数。每局一次。",
-      "面包和奶酪：本局之后所有三条牌型倍率 +1，基础点数 +12。每局一次。",
-      "面包和黄油：本局之后所有两对牌型倍率 +2，基础点数 +5。每局一次。",
-      "面包和果酱：本局之后所有顺子牌型倍率 +2，基础点数 +3。每局一次。",
+      "双角龙：本回合倍率 +3；本局番茄命中和投掷有效计数变为 3 倍，包括选择前已有计数。",
+      "面包和奶酪：本局之后所有三条牌型倍率 +1，基础点数 +12。",
+      "面包和黄油：本局之后所有两对牌型倍率 +2，基础点数 +5。",
+      "面包和果酱：本局之后所有顺子牌型倍率 +2，基础点数 +3。",
       "星界身体：本回合最终分 +1000；从本回合开始，本局之后每回合最终得分降低至 50%。每局一次。",
-      "钢化番茄：从本回合开始持续判定；若有效命中次数超过 30 或有效投掷次数超过 50，每回合点数额外加入（命中x0.5 + 投掷x0.2）x5，并保留一位小数。每局一次。",
-      "回归基本功：只在第 2/3 回合出现；之后不能再选特效；第 2/3/4/5 回合分别获得 +12/+15/+15/+18 点数和 +1.25/+1.5/+1.5/+1.75 倍率。每局一次。",
-      "亮出你的剑：只在第 2/3 回合出现；之后不能再弃牌；第 2/3/4/5 回合分别获得 +12/+12/+12/+15 点数和 +1.5/+1.75/+1.75/+2 倍率。刷新球可重新允许弃牌但保留亮剑加成。每局一次。",
-      "关键暴击：从本回合开始，参与牌型计分的牌有 50% 几率暴击，暴击点数 x1.75。每局一次。",
-      "无尽之刃：从本回合开始，参与牌型计分的牌暴击率 +25%，暴击倍率提高到 x2.25。每局一次。",
-      "暴击切牌：从本回合开始，参与牌型计分的牌暴击率 +25%；每回合若至少一张计分牌触发暴击，额外获得 1 次弃牌。每局一次。",
+      "钢化番茄：从本回合开始持续判定；若有效命中次数超过 30 或有效投掷次数超过 50，每回合点数额外加入（命中x0.5 + 投掷x0.2）x5，并保留一位小数。",
+      "回归基本功：只在第 2/3 回合出现；之后不能再选特效；第 2/3/4/5 回合分别获得 +12/+15/+15/+18 点数和 +1.25/+1.5/+1.5/+1.75 倍率。",
+      "亮出你的剑：只在第 2/3 回合出现；之后不能再弃牌；第 2/3/4/5 回合分别获得 +12/+12/+12/+15 点数和 +1.5/+1.75/+1.75/+2 倍率。刷新球可重新允许弃牌但保留亮剑加成。",
+      "关键暴击：从本回合开始，参与牌型计分的牌有 50% 几率暴击，暴击点数 x1.75。",
+      "无尽之刃：从本回合开始，参与牌型计分的牌暴击率 +25%，暴击倍率提高到 x2.25。",
+      "暴击切牌：从本回合开始，参与牌型计分的牌暴击率 +25%；每回合若至少一张计分牌触发暴击，额外获得 1 次弃牌。",
       "残暴之力：本回合点数 +25，倍率 +1。",
       "大力：本回合计分点数之和 x1.5 后再乘以牌型倍率。",
       "刷新球：本回合倍率 +1，并额外获得 4 次弃牌；若此前被亮剑禁止弃牌，则重新允许弃牌。",
-      "巨人杀手：从本回合开始，按回合开始前与最高总分的差距提升本回合得分：x1.3/x1.4/x1.5/x1.6/x1.7。每局一次。",
-      "马太效应：本回合倍率 +2；之后每次单回合得分最高时，额外获得 3 次弃牌。每局一次。",
+      "巨人杀手：从本回合开始，按回合开始前与最高总分的差距提升本回合得分：x1.3/x1.4/x1.5/x1.6/x1.7。",
+      "马太效应：本回合倍率 +2；之后每次单回合得分最高时，额外获得 3 次弃牌。",
       "直接来吧：结算时将当前剩余未使用弃牌次数额外加到倍率上。",
       "红温火烤：如果在自己的回合开始后 15 秒内出牌，本回合点数 +10 后再乘以倍率。"
     ];
@@ -1660,6 +1699,7 @@ function battleBalanceRuleText() {
     "Critical Hit: from this round onward, scoring-hand cards have 50% crit chance for x1.75 chips. Once per game.",
     "Infinity Edge: from this round onward, scoring-hand cards gain +25% crit chance and the crit multiplier rises to x2.25. Once per game.",
     "Critical Switch Hand: from this round onward, scoring-hand cards gain +25% crit chance; any scoring-card crit in a round grants 1 extra discard. Once per game.",
+    "Dance of Illusions: gain +25% crit chance and +65% attack speed. Tomatoes thrown at this ghosted player still count as hits against them, but do not count as throws for the thrower. Once per game.",
     "Brutal Force: this round gains +25 chips and +1 multiplier.",
     "Vigorous: this round multiplies the chip total by x1.5 before applying hand multiplier.",
     "Refresher Orb: this round gains +1 multiplier and 4 extra discard uses. If Draw your sword blocked discards, discards are re-enabled without removing Draw your sword's scoring bonuses.",
@@ -2383,8 +2423,10 @@ function renderScoreTable(table) {
   felt.append(
     el("div", { className: "center-board score-center-board" }, [
       el("div", { className: "score-title" }, [title]),
-      renderScoreRoundEffects(table),
-      community
+      el("div", { className: "score-community-area" }, [
+        community,
+        renderScoreRoundEffects(table)
+      ])
     ]),
     seatGrid
   );
@@ -2548,9 +2590,14 @@ function renderScorePersistentEffects(seat) {
   const profile = seat.criticalProfile || {};
   const critChance = Number(profile.chance) || 0;
   const critMultiplier = Number(profile.multiplier) || 1;
+  const attackProfile = seat.attackSpeedProfile || {};
+  const attackSpeed = Number(attackProfile.speed) || 1;
   return el("div", { className: `persistent-effect-line ${effects.length ? "" : "is-empty"}` }, [
     el("span", { className: "persistent-effect-pill crit-rate-pill" }, [
       `${t("Crit rate")} ${formatPercent(critChance)}${critChance > 0 ? ` x${formatCompactNumber(critMultiplier)}` : ""}`
+    ]),
+    el("span", { className: "persistent-effect-pill attack-speed-pill" }, [
+      `${t("Attack speed")} x${formatCompactNumber(attackSpeed)}`
     ]),
     ...effects.map((effect) => el("span", {
       className: "persistent-effect-pill",
@@ -3136,6 +3183,7 @@ function battleEffectName(effect) {
   if (effect.kind === "giant-killer") return isZh() ? "巨人杀手" : "Giant Killer";
   if (effect.kind === "matthew-effect") return isZh() ? "马太效应" : "Matthew effect";
   if (effect.kind === "critical-switch-hand") return isZh() ? "暴击切牌" : "Critical Switch Hand";
+  if (effect.kind === "dance-illusions") return isZh() ? "\u5e7b\u5f71\u4e4b\u821e" : "Dance of Illusions";
   if (effect.kind === "rambo") return isZh() ? "\u7ea2\u6e29\u706b\u70e4" : "Rambo";
   return effect.kind || "";
 }
@@ -3276,6 +3324,11 @@ function battleBalanceEffectDescription(effect) {
     return isZh()
       ? "本局之后参与牌型计分的牌暴击率 +25%；每回合若至少一张计分牌暴击，额外获得 1 次弃牌。每局一次。"
       : "For the rest of this game, scoring-hand cards gain +25% crit chance; any scoring-card crit in a round grants 1 extra discard. Once per game.";
+  }
+  if (effect.kind === "dance-illusions") {
+    return isZh()
+      ? "\u66b4\u51fb\u7387 +25%\uff0c\u653b\u51fb\u901f\u5ea6 +65%\uff0c\u5e76\u8fdb\u5165\u5e7d\u7075\u72b6\u6001\uff1a\u5411\u8be5\u73a9\u5bb6\u6295\u63b7\u756a\u8304\u65f6\uff0c\u547d\u4e2d\u4e0d\u8ba1\u5165\u6295\u63b7\u8005\u7684\u6295\u63b7\u6b21\u6570\uff0c\u4f46\u4f1a\u8ba1\u5165\u8be5\u73a9\u5bb6\u88ab\u6295\u63b7\u7684\u6b21\u6570\u3002\u6bcf\u5c40\u4e00\u6b21\u3002"
+      : "Gain +25% crit chance and +65% attack speed. You become ghosted: tomatoes thrown at you still count as hits against you, but do not count as throws for the thrower. Once per game.";
   }
   if (effect.kind === "astral-body-penalty") {
     return isZh()
