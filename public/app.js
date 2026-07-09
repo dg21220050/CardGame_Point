@@ -254,6 +254,24 @@ Object.assign(zhText, {
   "Choose effect targets.": "\u9009\u62e9\u7279\u6548\u76ee\u6807\u3002"
 });
 
+Object.assign(zhText, {
+  "Only cards that make the scored hand contribute base chips; other played cards only score through specific effect bonuses.": "只有凑出当前牌型的牌会贡献基础点数；其他已出牌只有在特定特效加成时才会得分。",
+  "Not part of scoring hand": "不参与牌型计分",
+  "Bonus only": "仅特效加成",
+  "Crit rate": "暴击率",
+  "Table chat": "牌桌聊天",
+  "No chat messages yet.": "暂无聊天消息。",
+  "Message table": "在牌桌内聊天",
+  "Send": "发送",
+  "Only seated players can chat.": "只有入座玩家可以聊天。",
+  "Player": "玩家",
+  "Write a message before sending.": "请先输入聊天内容。",
+  "Chat messages must be 200 characters or fewer.": "聊天内容不能超过 200 字。",
+  "Score Battle table chat is now available from the right panel.": "积分对战牌桌右侧面板已加入聊天栏。",
+  "Balance tuning and scoring logic now count only cards that form the made hand, unless an effect adds bonus chips.": "平衡性和计分逻辑已调整：只有凑出牌型的牌计入基础点数，除非特定特效提供额外加成。",
+  "Persistent effects and each player's current crit rate are visible on the table.": "牌桌上现在会显示每位玩家的持续特效和当前暴击率。"
+});
+
 const zhPhase = {
   waiting: "等待中",
   preflop: "翻牌前",
@@ -324,6 +342,7 @@ const state = {
   victoryEffectTimer: null,
   showUpdateNotice: false,
   showUpdateHistory: false,
+  updateHistoryScroll: 0,
   showBattleRules: false,
   battleSelections: [],
   battleEffectTarget: null,
@@ -340,6 +359,9 @@ const state = {
   battleScoreQueue: [],
   battleScoreOverlay: null,
   battleScoreOverlayTimer: null,
+  scoreChatDrafts: {},
+  scoreChatScrolls: {},
+  scoreChatStickToBottom: {},
   scoreTableRefreshFailures: 0
 };
 
@@ -1023,6 +1045,8 @@ function appendUpdateNotice() {
       el("ul", { className: "update-list" }, [
         el("li", {}, [t("Password changes and admin feedback are available from Profile.")]),
         el("li", {}, [t("Account popups now keep typed text while the table refreshes.")]),
+        el("li", {}, [t("Score Battle table chat is now available from the right panel.")]),
+        el("li", {}, [t("Balance tuning and scoring logic now count only cards that form the made hand, unless an effect adds bonus chips.")]),
         el("li", {}, [t("Traditional card-table mode has been removed; the app now focuses on Score Battle.")]),
         el("li", {}, [t("New critical, discard, and comeback effects are available in Score Battle.")]),
         el("li", {}, [t("This build is prepared for GitHub backup and future internet deployment.")])
@@ -1040,6 +1064,9 @@ function updateHistoryEntries() {
         "Password changes and admin feedback are available from Profile.",
         "Account popups now keep typed text while the table refreshes.",
         "Score Battle hosts can now add CPU players.",
+        "Score Battle table chat is now available from the right panel.",
+        "Balance tuning and scoring logic now count only cards that form the made hand, unless an effect adds bonus chips.",
+        "Persistent effects and each player's current crit rate are visible on the table.",
         "Traditional card-table mode has been removed; the app now focuses on Score Battle.",
         "New critical, discard, and comeback effects are available in Score Battle.",
         "This build is prepared for GitHub backup and future internet deployment."
@@ -1097,27 +1124,38 @@ function openUpdateHistory() {
 
 function closeUpdateHistory() {
   state.showUpdateHistory = false;
+  state.updateHistoryScroll = 0;
   render();
 }
 
 function appendUpdateHistoryModal() {
   if (!state.showUpdateHistory) return;
-  app.appendChild(el("div", { className: "modal-backdrop", role: "presentation" }, [
-    el("section", { className: "update-modal update-history-modal", role: "dialog", "aria-modal": "true", "aria-labelledby": "update-history-title" }, [
-      el("div", { className: "modal-head" }, [
-        el("div", {}, [
-          el("span", { className: "pill" }, [t("Version")]),
-          el("h2", { id: "update-history-title" }, [t("Update history")])
-        ]),
-        el("button", { className: "ghost modal-close", type: "button", onclick: closeUpdateHistory, "aria-label": t("Close") }, ["x"])
+  const modal = el("section", {
+    className: "update-modal update-history-modal",
+    role: "dialog",
+    "aria-modal": "true",
+    "aria-labelledby": "update-history-title",
+    onscroll: (event) => {
+      state.updateHistoryScroll = event.currentTarget.scrollTop;
+    }
+  }, [
+    el("div", { className: "modal-head" }, [
+      el("div", {}, [
+        el("span", { className: "pill" }, [t("Version")]),
+        el("h2", { id: "update-history-title" }, [t("Update history")])
       ]),
-      ...updateHistoryEntries().map((entry) => el("section", { className: "update-history-section" }, [
-        el("h3", {}, [t(`Update ${entry.version}`)]),
-        el("ul", { className: "update-list" }, entry.items.map((item) => el("li", {}, [t(item)])))
-      ])),
-      el("button", { type: "button", onclick: closeUpdateHistory }, [t("Close")])
-    ])
-  ]));
+      el("button", { className: "ghost modal-close", type: "button", onclick: closeUpdateHistory, "aria-label": t("Close") }, ["x"])
+    ]),
+    ...updateHistoryEntries().map((entry) => el("section", { className: "update-history-section" }, [
+      el("h3", {}, [t(`Update ${entry.version}`)]),
+      el("ul", { className: "update-list" }, entry.items.map((item) => el("li", {}, [t(item)])))
+    ])),
+    el("button", { type: "button", onclick: closeUpdateHistory }, [t("Close")])
+  ]);
+  app.appendChild(el("div", { className: "modal-backdrop", role: "presentation" }, [modal]));
+  requestAnimationFrame(() => {
+    modal.scrollTop = state.updateHistoryScroll || 0;
+  });
 }
 
 function appendAccountModals() {
@@ -1315,9 +1353,10 @@ function buildBattleScoreOverlay() {
     const value = valueByCode.get(card.code) || {};
     const bonus = (value.bonuses || []).reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
     const bonusText = bonus === 0 ? "" : ` ${bonus > 0 ? "+" : "-"} ${Math.abs(bonus)}`;
+    const scoringText = value.scoresHand === false ? ` (${t("Not part of scoring hand")})` : "";
     return el("li", { className: "calc-step", style: `--step-index: ${index}` }, [
       el("span", {}, [card.displayCode || value.displayCode || card.code]),
-      el("span", {}, [`${t("Base chips")} ${value.baseChips ?? 0}${bonusText} = ${value.finalChips ?? 0}`])
+      el("span", {}, [`${t("Base chips")} ${value.baseChips ?? 0}${bonusText} = ${value.finalChips ?? 0}${scoringText}`])
     ]);
   });
   const multiplierBonus = Number(result.bonusMultiplier || 0);
@@ -1427,6 +1466,7 @@ function buildBattleRulesModal() {
           el("h3", {}, [t("Rules note")]),
           el("ul", { className: "update-list" }, [
             el("li", {}, [t("Choose five cards from your hand and the community board. At least one card must be a community card.")]),
+            el("li", {}, [t("Only cards that make the scored hand contribute base chips; other played cards only score through specific effect bonuses.")]),
             el("li", {}, [t("Round hand sizes refill to 3, 4, 5, 5, and 5 cards. Unplayed hand cards stay for the next round.")]),
             el("li", {}, [t("Played hand cards are removed for the rest of the game. Each player has four discard uses per game.")])
           ]),
@@ -1457,6 +1497,8 @@ function scoreRuleRows() {
 }
 
 function battleEffectRuleText() {
+  const balancedRules = battleBalanceRuleText();
+  if (balancedRules.length) return balancedRules;
   if (isZh()) {
     return [
       "同花色点数增强：指定花色的已出牌每张 +4 点。",
@@ -1535,6 +1577,95 @@ function battleEffectRuleText() {
     "Matthew effect: this round gains +2 multiplier. From this round onward, each time you have the highest single-round score, gain 3 extra discard uses. Once per game.",
     "Critical Switch Hand: from this round onward, gain +25% additive crit chance. Whenever at least one played card crits during your round scoring, gain 1 extra discard use. Once per game.",
     "Bite me: at scoring time, add your remaining unused discard uses to this round's multiplier. If you keep discarding after choosing it, the final multiplier bonus drops with the remaining count.",
+    "Rambo: if you play within 15 seconds after your turn starts, gain +10 chips before multiplying."
+  ];
+}
+
+function battleBalanceRuleText() {
+  if (isZh()) {
+    return [
+      "基础计分：高牌只计入最高牌；一对只计入对子两张；两对只计入两对四张；三条只计入三张；四条只计入四张；顺子、同花、葫芦、同花顺计入全部五张。",
+      "未参与牌型的牌基础点数为 0，但同花色点数增强、点数增强、红色增幅、虚无封印拥有者加成等逐牌加点特效仍可让这些牌获得额外点数。",
+      "暴击只会在参与牌型计分的牌上判定；不参与牌型的牌即使通过特效获得额外点数，也不会因此触发暴击。",
+      "同花色点数增强：指定花色的已出牌每张 +4 点。",
+      "点数增强：指定点数的已出牌每张 +7 点。",
+      "红色增幅：已出的红桃和方块每张 +3 点。",
+      "对子引擎：牌型为一对或两对时，倍率 +2。",
+      "同花引擎：牌型为同花或同花顺时，倍率 +1.5。",
+      "虚无封印：从选择者开始，本回合之后顺序出牌玩家的指定花色点数 -3，最低 0；选择者自己的该花色牌改为每张 +4，并且只要打出的 5 张牌包含该花色，倍率 +1。",
+      "花色复制：按顺序选择两张自己的手牌，第一张复制第二张花色；本回合倍率 +2.5。",
+      "暗隐置换：选择一张手牌与一张公共牌交换；本回合点数 +5，倍率 +1。",
+      "虚空侵蚀：移除一张公共牌并补发；本回合点数 +5，倍率 +1。",
+      "镜中世界：将公共牌点数按 A/K、Q/2、J/3、10/4、9/5、8/6 互换，7 不变；本回合点数 +6，倍率 +2。",
+      "镜中人：将自己的手牌按同样规则互换点数；本回合点数 +6，倍率 +2。",
+      "德莱联盟：本回合倍率 +3.5；若本回合得分最高，结算后额外获得当前所有玩家最高总分的 20%。",
+      "歌莉娅：自己的手牌在不改变花色的前提下变为 8、9、10、J、Q、K 中不完全相同的点数。",
+      "虚空索敌：选择自己的两张手牌并指定一名尚未出牌的目标，与其随机两张手牌交换；本回合倍率 +1，并额外加上换得两张牌的点数和。",
+      "混沌骰子：将所有尚未出牌玩家的手牌重发；选择者本回合倍率 +1，并额外加上重发手牌总数 x0.5 点。",
+      "番茄大王：本回合倍率 +1；本局内本回合之前被其他玩家投掷番茄命中的次数 x5 加到手牌点数。每局一次。",
+      "番茄射手：本回合倍率 +1；本局内本回合之前向其他玩家投掷番茄的次数 x5 加到手牌点数。每局一次。",
+      "同花大顺：打出同花顺时，最终分 +1000。",
+      "质变：顺子：若打出顺子，按同花顺倍率计算。每局一次。",
+      "双角龙：本回合倍率 +3；本局番茄命中和投掷有效计数变为 3 倍，包括选择前已有计数。每局一次。",
+      "面包和奶酪：本局之后所有三条牌型倍率 +1，基础点数 +12。每局一次。",
+      "面包和黄油：本局之后所有两对牌型倍率 +2，基础点数 +5。每局一次。",
+      "面包和果酱：本局之后所有顺子牌型倍率 +2，基础点数 +3。每局一次。",
+      "星界身体：本回合最终分 +1000；从本回合开始，本局之后每回合最终得分降低至 50%。每局一次。",
+      "钢化番茄：从本回合开始持续判定；若有效命中次数超过 30 或有效投掷次数超过 50，每回合点数额外加入（命中x0.5 + 投掷x0.2）x5，并保留一位小数。每局一次。",
+      "回归基本功：只在第 2/3 回合出现；之后不能再选特效；第 2/3/4/5 回合分别获得 +12/+15/+15/+18 点数和 +1.25/+1.5/+1.5/+1.75 倍率。每局一次。",
+      "亮出你的剑：只在第 2/3 回合出现；之后不能再弃牌；第 2/3/4/5 回合分别获得 +12/+12/+12/+15 点数和 +1.5/+1.75/+1.75/+2 倍率。刷新球可重新允许弃牌但保留亮剑加成。每局一次。",
+      "关键暴击：从本回合开始，参与牌型计分的牌有 50% 几率暴击，暴击点数 x1.75。每局一次。",
+      "无尽之刃：从本回合开始，参与牌型计分的牌暴击率 +25%，暴击倍率提高到 x2.25。每局一次。",
+      "暴击切牌：从本回合开始，参与牌型计分的牌暴击率 +25%；每回合若至少一张计分牌触发暴击，额外获得 1 次弃牌。每局一次。",
+      "残暴之力：本回合点数 +25，倍率 +1。",
+      "大力：本回合计分点数之和 x1.5 后再乘以牌型倍率。",
+      "刷新球：本回合倍率 +1，并额外获得 4 次弃牌；若此前被亮剑禁止弃牌，则重新允许弃牌。",
+      "巨人杀手：从本回合开始，按回合开始前与最高总分的差距提升本回合得分：x1.3/x1.4/x1.5/x1.6/x1.7。每局一次。",
+      "马太效应：本回合倍率 +2；之后每次单回合得分最高时，额外获得 3 次弃牌。每局一次。",
+      "直接来吧：结算时将当前剩余未使用弃牌次数额外加到倍率上。",
+      "红温火烤：如果在自己的回合开始后 15 秒内出牌，本回合点数 +10 后再乘以倍率。"
+    ];
+  }
+  return [
+    "Base scoring: High Card scores only the highest card; One Pair scores the pair; Two Pair scores both pairs; Three/Four of a Kind score only the matching cards; Straight, Flush, Full House, and Straight Flush score all five cards.",
+    "Cards outside the made hand have 0 base chips, but per-card chip effects such as suit boost, rank boost, red boost, and the Void Seal owner bonus can still add chips to them.",
+    "Crits are checked only on cards that participate in the scored hand. Non-scoring cards do not crit even if an effect gives them bonus chips.",
+    "Suit chip boost: played cards of one suit each gain +4 chips.",
+    "Rank boost: played cards of one rank each gain +7 chips.",
+    "Red boost: played hearts and diamonds each gain +3 chips.",
+    "Pair engine: One Pair or Two Pair gains +2 multiplier.",
+    "Flush engine: Flush or Straight Flush gains +1.5 multiplier.",
+    "Void seal: from the selector onward, one suit loses 3 chips this round, not below 0. The selector's played cards of that suit gain +4 chips instead, and add +1 multiplier if the five-card play contains that suit.",
+    "Pattern Reproduction: choose two hand cards in order; the first copies the second card's suit. This round gains +2.5 multiplier.",
+    "Shadow Swap: swap one hand card with one community card. This round gains +5 chips and +1 multiplier.",
+    "Void Erosion: remove one community card and deal a replacement. This round gains +5 chips and +1 multiplier.",
+    "World in Mirror: mirror all five community card ranks. This round gains +6 chips and +2 multiplier.",
+    "Man in Mirror: mirror all of your hand card ranks. This round gains +6 chips and +2 multiplier.",
+    "Draven's League: this round gains +3.5 multiplier. If you lead the round, gain 20% of the current highest total score after settlement.",
+    "GOELIA: your hand cards become non-identical ranks from 8, 9, 10, J, Q, and K while keeping suits.",
+    "Shadow Targeting: swap two hand cards with two random cards from an unplayed target. This round gains +1 multiplier and extra chips equal to the gained cards' chip values.",
+    "Chaos Dice: reroll every unplayed player's hand. The selector gains +1 multiplier and bonus chips equal to total rerolled hand cards x0.5.",
+    "King of the Tomato: this round gains +1 multiplier; earlier tomato hits against you this game add hits x5 chips. Once per game.",
+    "Tomato Shooter: this round gains +1 multiplier; earlier tomatoes you threw this game add throws x5 chips. Once per game.",
+    "Straight Flush: when you play a Straight Flush, gain +1000 final score.",
+    "Change: Straight: if your played hand is a Straight, calculate its multiplier as a Straight Flush. Once per game.",
+    "Protoceratops: this round gains +3 multiplier. Your effective tomato hit and throw counts become three times their raw values for the whole game. Once per game.",
+    "Bread and cheese: for the rest of this game, your Three of a Kind gains +1 multiplier and +12 chips. Once per game.",
+    "Bread and butter: for the rest of this game, your Two Pair gains +2 multiplier and +5 chips. Once per game.",
+    "Bread and Jam: for the rest of this game, your Straights gain +2 multiplier and +3 chips. Once per game.",
+    "Astral Body: this round gains +1000 final score, but later scores this game are halved. Once per game.",
+    "Tempered Tomato: from this round onward, thresholds are checked continuously. Once effective hits exceed 30 or throws exceed 50, each round adds (hits x0.5 + throws x0.2) x5 chips, rounded to one decimal. Once per game.",
+    "Returning to the fundamentals: only appears in rounds 2/3. You cannot choose more effects. Rounds 2/3/4/5 gain +12/+15/+15/+18 chips and +1.25/+1.5/+1.5/+1.75 multiplier. Once per game.",
+    "Draw your sword: only appears in rounds 2/3. You cannot discard. Rounds 2/3/4/5 gain +12/+12/+12/+15 chips and +1.5/+1.75/+1.75/+2 multiplier. Once per game. Refresher Orb can re-enable discards without removing these bonuses.",
+    "Critical Hit: from this round onward, scoring-hand cards have 50% crit chance for x1.75 chips. Once per game.",
+    "Infinity Edge: from this round onward, scoring-hand cards gain +25% crit chance and the crit multiplier rises to x2.25. Once per game.",
+    "Critical Switch Hand: from this round onward, scoring-hand cards gain +25% crit chance; any scoring-card crit in a round grants 1 extra discard. Once per game.",
+    "Brutal Force: this round gains +25 chips and +1 multiplier.",
+    "Vigorous: this round multiplies the chip total by x1.5 before applying hand multiplier.",
+    "Refresher Orb: this round gains +1 multiplier and 4 extra discard uses. If Draw your sword blocked discards, discards are re-enabled without removing Draw your sword's scoring bonuses.",
+    "Giant Killer: from this round onward, boost round score based on the gap to the leading total at round start. Once per game.",
+    "Matthew effect: this round gains +2 multiplier. Later round wins grant 3 extra discard uses. Once per game.",
+    "Bite me: at scoring time, add your remaining unused discard uses to this round's multiplier.",
     "Rambo: if you play within 15 seconds after your turn starts, gain +10 chips before multiplying."
   ];
 }
@@ -2360,6 +2491,7 @@ function renderScoreSeat(seat, index) {
       battleEffectName(seat.selectedEffect)
     ])
     : "";
+  const persistentEffects = renderScorePersistentEffects(seat);
   const scorePreview = seat.isYou ? renderScorePreview() : "";
   const result = seat.lastResult
     ? el("div", { className: "battle-result" }, [
@@ -2389,6 +2521,7 @@ function renderScoreSeat(seat, index) {
       el("strong", {}, [`${t("Total")} ${seat.totalScore || 0}`])
     ]),
     selectedEffect,
+    persistentEffects,
     actions,
     result,
     hand
@@ -2408,6 +2541,32 @@ function renderScoreTomatoBadge(seat) {
     ? "格式：本回合前/当前本局累计；叠角龙激活后显示有效计数"
     : "Format: before this round/current game total; Protoceratops shows effective counts";
   return el("span", { className: "badge tomato-count-badge", title }, [label]);
+}
+
+function renderScorePersistentEffects(seat) {
+  const effects = Array.isArray(seat.persistentEffects) ? seat.persistentEffects : [];
+  const profile = seat.criticalProfile || {};
+  const critChance = Number(profile.chance) || 0;
+  const critMultiplier = Number(profile.multiplier) || 1;
+  return el("div", { className: `persistent-effect-line ${effects.length ? "" : "is-empty"}` }, [
+    el("span", { className: "persistent-effect-pill crit-rate-pill" }, [
+      `${t("Crit rate")} ${formatPercent(critChance)}${critChance > 0 ? ` x${formatCompactNumber(critMultiplier)}` : ""}`
+    ]),
+    ...effects.map((effect) => el("span", {
+      className: "persistent-effect-pill",
+      title: battleEffectDescription(effect)
+    }, [battleEffectName(effect)]))
+  ]);
+}
+
+function formatPercent(value) {
+  const percent = Math.round((Number(value) || 0) * 1000) / 10;
+  return `${Number.isInteger(percent) ? percent.toFixed(0) : percent.toFixed(1)}%`;
+}
+
+function formatCompactNumber(value) {
+  const number = Number(value) || 0;
+  return Number.isInteger(number) ? String(number) : String(Math.round(number * 100) / 100);
 }
 
 function renderScoreSeatActions(seat) {
@@ -2490,19 +2649,23 @@ function renderBattleCard(card, source, table, options = {}) {
     ? state.battleEffectTarget.cardTargets.some((entry) => entry.code === card.code)
     : state.battleSelections.includes(card.code);
   const communityPlayed = card.source === "community";
+  const nonScoring = source === "result" && card.scoresHand === false;
   const classes = [
     "battle-card",
     selected ? "is-selected" : "",
     state.battleEffectTarget ? "is-effect-target-mode" : "",
     communityPlayed ? "is-community-played" : "",
+    nonScoring ? "is-non-scoring-card" : "",
     options.extraClass || ""
   ].filter(Boolean).join(" ");
   const props = { className: classes };
   if (options.style) props.style = options.style;
+  if (nonScoring) props.title = t("Not part of scoring hand");
   if (!interactive || source === "result" || card.code === "BACK") {
     return el("div", props, [
       cardImage(card),
-      communityPlayed ? el("span", { className: "community-tag" }, [t("Community card")]) : ""
+      communityPlayed ? el("span", { className: "community-tag" }, [t("Community card")]) : "",
+      nonScoring ? el("span", { className: "non-scoring-tag" }, [t("Bonus only")]) : ""
     ]);
   }
   return el("button", {
@@ -2558,11 +2721,76 @@ function renderScoreSidePanel(table) {
       el("li", {}, [`${table.readySeats} ${t("Ready")}`])
     ])
   ]));
+  panel.appendChild(renderScoreChatPanel(table));
   panel.appendChild(el("section", { className: "action-panel" }, [
     el("h3", {}, [t("Log")]),
     el("ul", { className: "message-list" }, table.messages.map((line) => el("li", {}, [line])))
   ]));
   return panel;
+}
+
+function renderScoreChatPanel(table) {
+  const key = table.id;
+  const messages = Array.isArray(table.chat) ? table.chat : [];
+  const draft = state.scoreChatDrafts[key] || "";
+  const list = el("div", {
+    className: "score-chat-list",
+    "data-score-chat-list": key,
+    onscroll: (event) => {
+      const node = event.currentTarget;
+      state.scoreChatScrolls[key] = node.scrollTop;
+      state.scoreChatStickToBottom[key] = node.scrollHeight - node.scrollTop - node.clientHeight < 18;
+    }
+  }, messages.length
+    ? messages.map((message) => el("div", { className: "score-chat-message" }, [
+      el("div", { className: "score-chat-meta" }, [
+        el("strong", {}, [message.username || t("Player")]),
+        el("span", {}, [formatChatTime(message.createdAt)])
+      ]),
+      el("div", { className: "score-chat-text" }, [message.message || ""])
+    ]))
+    : [el("div", { className: "empty-state compact" }, [t("No chat messages yet.")])]);
+
+  requestAnimationFrame(() => {
+    const node = app.querySelector(`[data-score-chat-list="${key}"]`);
+    if (!node) return;
+    if (state.scoreChatStickToBottom[key] !== false) node.scrollTop = node.scrollHeight;
+    else node.scrollTop = state.scoreChatScrolls[key] || 0;
+  });
+
+  const input = el("input", {
+    type: "text",
+    maxlength: "200",
+    value: draft,
+    placeholder: t("Message table"),
+    "data-field": "score-chat-input",
+    disabled: !table.canChat,
+    oninput: (event) => {
+      state.scoreChatDrafts[key] = event.currentTarget.value;
+    }
+  });
+  const form = el("form", {
+    className: "score-chat-form",
+    onsubmit: (event) => {
+      event.preventDefault();
+      sendScoreChatMessage(key);
+    }
+  }, [
+    input,
+    el("button", { type: "submit", disabled: !table.canChat }, [t("Send")])
+  ]);
+
+  return el("section", { className: "action-panel score-chat-panel" }, [
+    el("h3", {}, [t("Table chat")]),
+    list,
+    table.canChat ? form : el("div", { className: "empty-state compact" }, [t("Only seated players can chat.")])
+  ]);
+}
+
+function formatChatTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
 function canShowAddScoreBot(table) {
@@ -2914,6 +3142,8 @@ function battleEffectName(effect) {
 
 function battleEffectDescription(effect) {
   const suit = battleSuitName(effect.suit);
+  const balanceDescription = battleBalanceEffectDescription(effect);
+  if (balanceDescription) return balanceDescription;
   if (effect.kind === "suit-chip") return isZh() ? `\u6253\u51fa\u7684${suit}\u6bcf\u5f20 +${effect.amount} \u70b9` : `Played ${suit} cards gain +${effect.amount} chips.`;
   if (effect.kind === "rank-chip") return isZh() ? `\u6253\u51fa\u7684 ${effect.rank} \u6bcf\u5f20 +${effect.amount} \u70b9` : `Played ${effect.rank}s gain +${effect.amount} chips.`;
   if (effect.kind === "pair-mult") return isZh() ? `\u53ea\u6709\u4e00\u5bf9\u6216\u4e24\u5bf9\u65f6 +${effect.amount} \u500d\u7387` : `One Pair or Two Pair gains +${effect.amount} mult.`;
@@ -2967,6 +3197,91 @@ function battleEffectDescription(effect) {
   if (effect.kind === "matthew-effect") return isZh() ? "本回合倍率 +2；之后每次单回合最高分，额外获得 3 次弃牌。每局一次。" : "This round gains +2 mult; later round wins grant 3 extra discards. Once per game.";
   if (effect.kind === "critical-switch-hand") return isZh() ? "本局之后暴击率 +25%；每回合若至少一张牌暴击，额外获得 1 次弃牌。每局一次。" : "For the rest of this game, gain +25% crit chance; any crit in a round grants 1 extra discard. Once per game.";
   if (effect.kind === "rambo") return isZh() ? "\u82e5 15 \u79d2\u5185\u51fa\u724c\uff0c\u672c\u56de\u5408\u70b9\u6570 +10 \u540e\u518d\u4e58\u500d\u7387\u3002" : "If you play within 15 seconds, gain +10 chips before multiplying.";
+  return "";
+}
+
+function battleBalanceEffectDescription(effect) {
+  if (!effect) return "";
+  const suit = battleSuitName(effect.suit);
+  if (effect.kind === "suit-chip") {
+    return isZh()
+      ? `打出的${suit}每张 +${effect.amount} 点；即使该牌不参与牌型计分，也可以获得这项加成。`
+      : `Played ${suit} cards gain +${effect.amount} chips, even when that card is not part of the scoring hand.`;
+  }
+  if (effect.kind === "rank-chip") {
+    return isZh()
+      ? `打出的 ${effect.rank} 每张 +${effect.amount} 点；即使该牌不参与牌型计分，也可以获得这项加成。`
+      : `Played ${effect.rank}s gain +${effect.amount} chips, even when that card is not part of the scoring hand.`;
+  }
+  if (effect.kind === "red-chip") {
+    return isZh()
+      ? `打出的红桃和方块每张 +${effect.amount} 点；即使该牌不参与牌型计分，也可以获得这项加成。`
+      : `Played hearts and diamonds gain +${effect.amount} chips, even when that card is not part of the scoring hand.`;
+  }
+  if (effect.kind === "tomato-king") {
+    const hits = Number(effect.tomatoHits);
+    const hitText = Number.isFinite(hits) ? (isZh() ? `当前计入 ${hits} 次。` : `Currently counts ${hits}.`) : "";
+    return isZh()
+      ? `本回合倍率 +1；本局内本回合之前被番茄命中的次数 x5 加到手牌点数。每局一次。${hitText}`
+      : `This round gains +1 mult; earlier tomato hits this game add hits x5 chips. Once per game. ${hitText}`;
+  }
+  if (effect.kind === "tomato-shooter") {
+    const throws = Number(effect.tomatoThrows);
+    const throwText = Number.isFinite(throws) ? (isZh() ? `当前计入 ${throws} 次。` : `Currently counts ${throws}.`) : "";
+    return isZh()
+      ? `本回合倍率 +1；本局内本回合之前投掷番茄的次数 x5 加到手牌点数。每局一次。${throwText}`
+      : `This round gains +1 mult; earlier tomatoes you threw this game add throws x5 chips. Once per game. ${throwText}`;
+  }
+  if (effect.kind === "bread-butter") {
+    return isZh()
+      ? "本局之后所有两对牌型倍率 +2，基础点数 +5。每局一次。"
+      : "For the rest of this game, your Two Pair gains +2 mult and +5 chips. Once per game.";
+  }
+  if (effect.kind === "bread-cheese") {
+    return isZh()
+      ? "本局之后所有三条牌型倍率 +1，基础点数 +12。每局一次。"
+      : "For the rest of this game, your Three of a Kind gains +1 mult and +12 chips. Once per game.";
+  }
+  if (effect.kind === "bread-jam") {
+    return isZh()
+      ? "本局之后所有顺子牌型倍率 +2，基础点数 +3。每局一次。"
+      : "For the rest of this game, your Straights gain +2 mult and +3 chips. Once per game.";
+  }
+  if (effect.kind === "tempered-tomato") {
+    return isZh()
+      ? "持续判定番茄阈值；若有效命中超过 30 或有效投掷超过 50，每回合点数加入（命中x0.5 + 投掷x0.2）x5，保留一位小数。每局一次。"
+      : "Continuously checks tomato thresholds; once effective hits exceed 30 or throws exceed 50, future rounds add (hits x0.5 + throws x0.2) x5 chips, rounded to one decimal. Once per game.";
+  }
+  if (effect.kind === "returning-fundamentals") {
+    return isZh()
+      ? "只在第 2/3 回合出现；之后不能再选特效。第 2/3/4/5 回合获得 +12/+15/+15/+18 点数和 +1.25/+1.5/+1.5/+1.75 倍率。每局一次。"
+      : "Only appears in rounds 2/3. You cannot choose more effects. Rounds 2/3/4/5 gain +12/+15/+15/+18 chips and +1.25/+1.5/+1.5/+1.75 mult. Once per game.";
+  }
+  if (effect.kind === "draw-sword") {
+    return isZh()
+      ? "只在第 2/3 回合出现；之后不能弃牌。第 2/3/4/5 回合获得 +12/+12/+12/+15 点数和 +1.5/+1.75/+1.75/+2 倍率。每局一次。"
+      : "Only appears in rounds 2/3. You cannot discard. Rounds 2/3/4/5 gain +12/+12/+12/+15 chips and +1.5/+1.75/+1.75/+2 mult. Once per game.";
+  }
+  if (effect.kind === "critical-hit") {
+    return isZh()
+      ? "本局之后参与牌型计分的牌有 50% 几率暴击，暴击点数 x1.75。"
+      : "For the rest of this game, scoring-hand cards have 50% crit chance for x1.75 chips.";
+  }
+  if (effect.kind === "infinity-edge") {
+    return isZh()
+      ? "本局之后参与牌型计分的牌暴击率 +25%，暴击倍率提升至 x2.25。每局一次。"
+      : "For the rest of this game, scoring-hand cards gain +25% crit chance and crit multiplier rises to x2.25. Once per game.";
+  }
+  if (effect.kind === "critical-switch-hand") {
+    return isZh()
+      ? "本局之后参与牌型计分的牌暴击率 +25%；每回合若至少一张计分牌暴击，额外获得 1 次弃牌。每局一次。"
+      : "For the rest of this game, scoring-hand cards gain +25% crit chance; any scoring-card crit in a round grants 1 extra discard. Once per game.";
+  }
+  if (effect.kind === "astral-body-penalty") {
+    return isZh()
+      ? "星界身体的持续惩罚：本局之后每回合最终得分变为 50%。"
+      : "Astral Body's persistent penalty: later scores this game are halved.";
+  }
   return "";
 }
 
@@ -3082,6 +3397,10 @@ async function logout() {
   state.feedbackDraft = "";
   state.showUpdateNotice = false;
   state.showUpdateHistory = false;
+  state.updateHistoryScroll = 0;
+  state.scoreChatDrafts = {};
+  state.scoreChatScrolls = {};
+  state.scoreChatStickToBottom = {};
   state.tables = [];
   state.scoreTables = [];
   state.tomatoSeenKeys.clear();
@@ -3269,6 +3588,24 @@ async function addScoreBot() {
     const response = await api(`/api/score-tables/${state.scoreTable.id}/add-bot`, { method: "POST" });
     setCurrentScoreTable(response.table);
     await refreshScoreTables(false);
+  } catch (error) {
+    state.error = error.message;
+  }
+  render();
+}
+
+async function sendScoreChatMessage(tableId) {
+  if (!state.scoreTable || state.scoreTable.id !== tableId) return;
+  const message = String(state.scoreChatDrafts[tableId] || "").trim();
+  if (!message) return;
+  try {
+    const response = await api(`/api/score-tables/${tableId}/chat`, {
+      method: "POST",
+      body: { message }
+    });
+    state.scoreChatDrafts[tableId] = "";
+    state.scoreChatStickToBottom[tableId] = true;
+    setCurrentScoreTable(response.table);
   } catch (error) {
     state.error = error.message;
   }

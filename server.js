@@ -33,6 +33,8 @@ const MAX_HISTORY_ENTRIES = 50;
 const MAX_AVATAR_DATA_URL_BYTES = 256 * 1024;
 const MAX_JSON_BODY_BYTES = Number(process.env.MAX_JSON_BODY_BYTES || 8 * 1024 * 1024);
 const MAX_FEEDBACK_MESSAGE_CHARS = 200;
+const MAX_SCORE_CHAT_MESSAGE_CHARS = 200;
+const MAX_SCORE_CHAT_MESSAGES = 100;
 const UNSTARTED_TABLE_TTL_MS = 5 * 60 * 1000;
 const SCORE_TABLE_IDLE_TTL_MS = 10 * 60 * 1000;
 const TABLE_PRUNE_INTERVAL_MS = 15 * 1000;
@@ -567,6 +569,17 @@ async function handleApi(req, res, url, method) {
         return;
       }
       addScoreBot(table);
+      sendJson(res, 200, { table: scoreTableView(table, user) });
+      return;
+    }
+
+    if (method === "POST" && pathParts[3] === "chat") {
+      const body = await readJsonBody(req);
+      const result = addScoreChatMessage(table, user, body.message);
+      if (!result.ok) {
+        sendJson(res, result.status || 400, { error: result.error });
+        return;
+      }
       sendJson(res, 200, { table: scoreTableView(table, user) });
       return;
     }
@@ -1899,6 +1912,7 @@ function createScoreTable(rawName, user) {
     scoreTomatoHits: [],
     historyRecorded: false,
     results: [],
+    chat: [],
     messages: [`${user.username} opened a score battle table.`]
   };
   scoreTables.set(id, table);
@@ -1959,6 +1973,29 @@ function addScoreBot(table) {
   table.idleSince = Date.now();
   table.messages.unshift(`${name} joined the score battle.`);
   return seat;
+}
+
+function addScoreChatMessage(table, user, rawMessage) {
+  const seat = table.seats.find((entry) => entry.userId === user.id && !entry.left);
+  if (!seat) return { ok: false, status: 403, error: "Only seated players can chat at this score battle table." };
+  const message = String(rawMessage || "").trim().replace(/\s+/g, " ");
+  if (!message) return { ok: false, error: "Write a message before sending." };
+  if (message.length > MAX_SCORE_CHAT_MESSAGE_CHARS) {
+    return { ok: false, error: `Chat messages must be ${MAX_SCORE_CHAT_MESSAGE_CHARS} characters or fewer.` };
+  }
+  const entry = {
+    id: crypto.randomBytes(8).toString("hex"),
+    seatId: seat.seatId,
+    userId: user.id,
+    username: seat.displayName,
+    message,
+    createdAt: new Date().toISOString()
+  };
+  table.chat = Array.isArray(table.chat) ? table.chat : [];
+  table.chat.push(entry);
+  table.chat = table.chat.slice(-MAX_SCORE_CHAT_MESSAGES);
+  table.idleSince = ["waiting", "finished"].includes(table.phase) ? Date.now() : table.idleSince;
+  return { ok: true, entry };
 }
 
 function joinScoreTable(table, user) {
@@ -2625,6 +2662,7 @@ function applyScorePlayResourceBonuses(table, seat, result) {
 
 function scoreResultForClient(table, seat, cards, result, automatic, scoringEffect = seat.selectedEffect) {
   const communityCodes = new Set(table.community.map((card) => card.code));
+  const valueByCode = new Map((result.cardValues || []).map((entry) => [entry.code, entry]));
   return {
     handId: result.handId,
     handName: result.handName,
@@ -2637,10 +2675,14 @@ function scoreResultForClient(table, seat, cards, result, automatic, scoringEffe
     score: result.score,
     chipTotalBeforeFactors: result.chipTotalBeforeFactors,
     chipFactors: result.chipFactors || [],
-    cards: cards.map((card) => ({
-      ...cardForClient(card),
-      source: communityCodes.has(card.code) ? "community" : "hand"
-    })),
+    cards: cards.map((card) => {
+      const value = valueByCode.get(card.code) || {};
+      return {
+        ...cardForClient(card),
+        source: communityCodes.has(card.code) ? "community" : "hand",
+        scoresHand: value.scoresHand !== false
+      };
+    }),
     cardValues: result.cardValues,
     globalChipBonuses: result.globalChipBonuses || [],
     multiplierBonuses: result.multiplierBonuses,
@@ -3170,12 +3212,14 @@ function scoreTableView(table, user) {
     readySeats,
     canJoin: table.phase === "waiting" && !youSeat && scoreVisibleSeats(table).length < SCORE_BATTLE_MAX_SEATS,
     canLeave: Boolean(youSeat),
+    canChat: Boolean(youSeat),
     canReady: Boolean(youSeat && preGame),
     canAddBot: Boolean(table.createdBy === user.id && preGame && scoreVisibleSeats(table).length < SCORE_BATTLE_MAX_SEATS),
     canStart: Boolean(table.createdBy === user.id && preGame && readyHumanSeats >= 1 && readySeats >= SCORE_BATTLE_MIN_PLAYERS),
     seats: table.seats.map((seat) => scoreSeatForClient(table, seat, youSeat)),
     standings: table.standings,
     tomatoEvents: tomatoEventsForClient(table),
+    chat: scoreChatForClient(table),
     results: table.results,
     messages: table.messages.slice(0, 8)
   };
@@ -3185,6 +3229,7 @@ function scoreSeatForClient(table, seat, youSeat) {
   const isYou = seat.seatId === youSeat?.seatId;
   const isScoreTurn = isCurrentScoreTurn(table, seat);
   const tomatoCounts = scoreTomatoCountsForSeat(table, seat);
+  const criticalProfile = scoreBattle.criticalProfileForEffects(seat.persistentEffects || {});
   const result = seat.lastResult ? {
     handId: seat.lastResult.handId,
     handName: seat.lastResult.handName,
@@ -3222,6 +3267,8 @@ function scoreSeatForClient(table, seat, youSeat) {
     roundScore: seat.roundScore,
     totalScore: seat.totalScore,
     tomatoCounts,
+    persistentEffects: scorePersistentEffectsForClient(seat),
+    criticalProfile,
     winCount: Number(seat.winCount) || 0,
     wonLastGame: Boolean((table.lastWinnerSeatIds || []).includes(seat.seatId) && table.lastVictoryGameNumber === table.gameNumber),
     isScoreTurn,
@@ -3237,6 +3284,37 @@ function scoreSeatForClient(table, seat, youSeat) {
     effectChosen: isYou ? seat.effectChosen : false,
     lastResult: result
   };
+}
+
+function scoreChatForClient(table) {
+  return (Array.isArray(table.chat) ? table.chat : [])
+    .slice(-MAX_SCORE_CHAT_MESSAGES)
+    .map((entry) => ({
+      id: entry.id,
+      seatId: entry.seatId,
+      username: entry.username,
+      message: entry.message,
+      createdAt: entry.createdAt
+    }));
+}
+
+function scorePersistentEffectsForClient(seat) {
+  const persistent = seat.persistentEffects || {};
+  const effects = [];
+  if (persistent.protoceratops) effects.push({ kind: "protoceratops" });
+  if (persistent.breadButter) effects.push({ kind: "bread-butter" });
+  if (persistent.breadCheese) effects.push({ kind: "bread-cheese" });
+  if (persistent.breadJam) effects.push({ kind: "bread-jam" });
+  if (persistent.astralBody) effects.push({ kind: "astral-body-penalty" });
+  if (persistent.temperedTomato) effects.push({ kind: "tempered-tomato" });
+  if (persistent.returningFundamentals) effects.push({ kind: "returning-fundamentals" });
+  if (persistent.drawSword) effects.push({ kind: "draw-sword" });
+  if (persistent.criticalHit) effects.push({ kind: "critical-hit" });
+  if (persistent.infinityEdge) effects.push({ kind: "infinity-edge" });
+  if (persistent.giantKiller) effects.push({ kind: "giant-killer" });
+  if (persistent.matthewEffect) effects.push({ kind: "matthew-effect" });
+  if (persistent.criticalSwitchHand) effects.push({ kind: "critical-switch-hand" });
+  return effects;
 }
 
 function scoreCardFromCode(code) {

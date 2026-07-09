@@ -85,7 +85,10 @@ function evaluateExactFive(cards) {
   else if (counts[0] === 2 && counts[1] === 2) id = "two-pair";
   else if (counts[0] === 2) id = "one-pair";
 
-  return HAND_BY_ID.get(id);
+  return {
+    ...HAND_BY_ID.get(id),
+    scoringIndexes: scoringIndexesForHand(cards, id, rankCounts)
+  };
 }
 
 function isStraight(uniqueRanks) {
@@ -93,6 +96,35 @@ function isStraight(uniqueRanks) {
   const ranks = uniqueRanks.slice().sort((a, b) => a - b);
   if (ranks.join(",") === "2,3,4,5,14") return true;
   return ranks.every((rank, index) => index === 0 || rank === ranks[index - 1] + 1);
+}
+
+function scoringIndexesForHand(cards, handId, rankCounts) {
+  if (["straight", "flush", "full-house", "straight-flush"].includes(handId)) {
+    return cards.map((_, index) => index);
+  }
+  if (handId === "high-card") {
+    let highestIndex = 0;
+    for (let index = 1; index < cards.length; index += 1) {
+      if (chipValue(cards[index]) > chipValue(cards[highestIndex])) highestIndex = index;
+    }
+    return [highestIndex];
+  }
+
+  const ranksByCount = new Map();
+  for (const [rank, count] of rankCounts.entries()) {
+    if (!ranksByCount.has(count)) ranksByCount.set(count, []);
+    ranksByCount.get(count).push(rank);
+  }
+
+  let scoringRanks = [];
+  if (handId === "one-pair") scoringRanks = ranksByCount.get(2) || [];
+  else if (handId === "two-pair") scoringRanks = ranksByCount.get(2) || [];
+  else if (handId === "three-kind") scoringRanks = ranksByCount.get(3) || [];
+  else if (handId === "four-kind") scoringRanks = ranksByCount.get(4) || [];
+
+  return cards
+    .map((card, index) => (scoringRanks.includes(card.rank) ? index : -1))
+    .filter((index) => index >= 0);
 }
 
 function createEffectOptions(options = {}) {
@@ -161,6 +193,7 @@ function effectAllowedInRound(kind, round) {
 
 function scorePlay(cards, effect, context = {}) {
   const hand = evaluateExactFive(cards);
+  const scoringIndexes = new Set(hand.scoringIndexes || cards.map((_, index) => index));
   let chips = 0;
   let additiveMultiplier = 0;
   let chipFactor = 1;
@@ -220,7 +253,9 @@ function scorePlay(cards, effect, context = {}) {
 
   for (let cardIndex = 0; cardIndex < cards.length; cardIndex += 1) {
     const card = cards[cardIndex];
-    const baseChips = chipValue(card);
+    const scoresHand = scoringIndexes.has(cardIndex);
+    const printedChips = chipValue(card);
+    const baseChips = scoresHand ? printedChips : 0;
     let finalChips = baseChips;
     const bonuses = [];
     if (effect?.kind === "suit-chip" && card.suit === effect.suit) {
@@ -251,7 +286,7 @@ function scorePlay(cards, effect, context = {}) {
         }
       }
     }
-    if (criticalProfile.chance > 0) {
+    if (scoresHand && criticalProfile.chance > 0) {
       const criticalMultiplier = criticalMultiplierForCard(cardIndex, criticalProfile, criticalRolls, useCriticalExpectedValue);
       if (criticalMultiplier > 1) {
         const beforeCritical = finalChips;
@@ -270,6 +305,8 @@ function scorePlay(cards, effect, context = {}) {
     cardValues.push({
       code: card.code,
       displayCode: displayCode(card),
+      scoresHand,
+      printedChips,
       baseChips,
       bonuses,
       finalChips
@@ -317,12 +354,12 @@ function scorePlay(cards, effect, context = {}) {
     addGlobalChipBonus(effect.kind, effect.amount || 10);
   }
   if (effect?.kind === "tomato-king") {
-    addGlobalChipBonus(effect.kind, Number(effect.tomatoHits) || 0);
+    addGlobalChipBonus(effect.kind, (Number(effect.tomatoHits) || 0) * 5);
     addMultiplierBonus(effect.kind, 1);
   }
   if (effect?.kind === "tomato-shooter") {
-    addGlobalChipBonus(effect.kind, Number(effect.tomatoThrows) || 0);
-    addMultiplierBonus(effect.kind, 0.5);
+    addGlobalChipBonus(effect.kind, (Number(effect.tomatoThrows) || 0) * 5);
+    addMultiplierBonus(effect.kind, 1);
   }
   if (effect?.kind === "bite-me") {
     addMultiplierBonus(effect.kind, Math.max(0, Number(effect.discardMultiplier) || 0));
@@ -346,29 +383,32 @@ function scorePlay(cards, effect, context = {}) {
   if (effect?.kind === "astral-body") {
     addScoreBonus(effect.kind, 1000);
   }
-  if (persistentEffects.breadButter && hand.id === "straight") {
+  if (persistentEffects.breadButter && hand.id === "two-pair") {
+    addGlobalChipBonus("bread-butter", 5);
     addMultiplierBonus("bread-butter", 2);
   }
   if (persistentEffects.breadCheese && hand.id === "three-kind") {
-    addMultiplierBonus("bread-cheese", 3);
+    addGlobalChipBonus("bread-cheese", 12);
+    addMultiplierBonus("bread-cheese", 1);
   }
-  if (persistentEffects.breadJam && hand.id === "two-pair") {
-    addMultiplierBonus("bread-jam", 4);
+  if (persistentEffects.breadJam && hand.id === "straight") {
+    addGlobalChipBonus("bread-jam", 3);
+    addMultiplierBonus("bread-jam", 2);
   }
   if (persistentEffects.temperedTomato) {
     const hits = Math.max(0, Number(tomatoCounts.hitsTotal) || 0);
     const throws = Math.max(0, Number(tomatoCounts.throwsTotal) || 0);
     if (hits > 30 || throws > 50) {
-      addGlobalChipBonus("tempered-tomato", Math.round((hits * 0.5 + throws * 0.2) * 10) / 10);
+      addGlobalChipBonus("tempered-tomato", Math.round((hits * 0.5 + throws * 0.2) * 5 * 10) / 10);
     }
   }
   if (persistentEffects.returningFundamentals) {
-    const bonuses = roundScaling(round, [0, 0, 15, 20, 20, 22], [0, 0, 1, 1.5, 1.5, 1.75]);
+    const bonuses = roundScaling(round, [0, 0, 12, 15, 15, 18], [0, 0, 1.25, 1.5, 1.5, 1.75]);
     addGlobalChipBonus("returning-fundamentals", bonuses.chips);
     addMultiplierBonus("returning-fundamentals", bonuses.multiplier);
   }
   if (persistentEffects.drawSword) {
-    const bonuses = roundScaling(round, [0, 0, 10, 15, 15, 18], [0, 0, 2, 2.5, 2.5, 2.75]);
+    const bonuses = roundScaling(round, [0, 0, 12, 12, 12, 15], [0, 0, 1.5, 1.75, 1.75, 2]);
     addGlobalChipBonus("draw-sword", bonuses.chips);
     addMultiplierBonus("draw-sword", bonuses.multiplier);
   }

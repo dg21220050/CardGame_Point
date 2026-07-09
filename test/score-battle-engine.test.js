@@ -27,9 +27,39 @@ test("applies a round void-suit chip reduction before multiplying", () => {
     roundEffects: [{ kind: "void-suit", suit: "S", amount: 3 }]
   });
   assert.equal(result.handId, "one-pair");
-  assert.equal(result.chips, 17);
+  assert.equal(result.chips, 8);
   assert.equal(result.multiplier, 2);
-  assert.equal(result.score, 34);
+  assert.equal(result.score, 16);
+});
+
+test("only made-hand cards contribute base chips", () => {
+  const high = scorePlay(cards(["2S", "5H", "7D", "9C", "JS"]));
+  assert.equal(high.handId, "high-card");
+  assert.equal(high.chips, 11);
+  assert.deepEqual(high.cardValues.map((entry) => entry.scoresHand), [false, false, false, false, true]);
+
+  const pair = scorePlay(cards(["4S", "4H", "7D", "8C", "9C"]));
+  assert.equal(pair.handId, "one-pair");
+  assert.equal(pair.chips, 8);
+  assert.deepEqual(pair.cardValues.map((entry) => entry.scoresHand), [true, true, false, false, false]);
+
+  const trips = scorePlay(cards(["4S", "4H", "4D", "8C", "9C"]));
+  assert.equal(trips.handId, "three-kind");
+  assert.equal(trips.chips, 12);
+  assert.deepEqual(trips.cardValues.map((entry) => entry.scoresHand), [true, true, true, false, false]);
+});
+
+test("chip effects can add chips to non-scoring cards without enabling crits", () => {
+  const result = scorePlay(cards(["4S", "4C", "AH", "7D", "9C"]), { kind: "red-chip", amount: 3 }, {
+    persistentEffects: { criticalHit: true },
+    criticalRolls: [true, true, true, true, true]
+  });
+
+  assert.equal(result.handId, "one-pair");
+  assert.equal(result.chips, 20);
+  assert.equal(result.cardValues.filter((entry) => entry.scoresHand).length, 2);
+  assert.equal(result.cardValues.filter((entry) => entry.bonuses.some((bonus) => bonus.kind === "critical-hit")).length, 2);
+  assert.equal(result.cardValues.find((entry) => entry.code === "AH").finalChips, 3);
 });
 
 test("pair engine only boosts one pair and two pair", () => {
@@ -52,18 +82,18 @@ test("flush engine uses the reduced one and a half multiplier", () => {
 test("specific interaction effects use their new balance rules", () => {
   const baseCards = cards(["2S", "5H", "7D", "9C", "JS"]);
   const cases = [
-    { kind: "pattern-reproduction", chips: 34, bonusMultiplier: 2.5, multiplier: 3.5 },
-    { kind: "shadow-swap", chips: 39, bonusMultiplier: 1, multiplier: 2 },
-    { kind: "void-erosion", chips: 39, bonusMultiplier: 1, multiplier: 2 },
-    { kind: "world-mirror", chips: 40, bonusMultiplier: 2, multiplier: 3 },
-    { kind: "man-mirror", chips: 40, bonusMultiplier: 2, multiplier: 3 },
-    { kind: "shadow-targeting", gainedChipBonus: 27, chips: 61, bonusMultiplier: 1, multiplier: 2 },
-    { kind: "chaos-dice", rerolledCardCount: 9, chips: 38.5, bonusMultiplier: 1, multiplier: 2 },
-    { kind: "draven", chips: 34, bonusMultiplier: 3.5, multiplier: 4.5 },
-    { kind: "tomato-king", tomatoHits: 6, chips: 40, bonusMultiplier: 1, multiplier: 2 },
-    { kind: "tomato-shooter", tomatoThrows: 5, chips: 39, bonusMultiplier: 0.5, multiplier: 1.5 },
-    { kind: "bite-me", discardMultiplier: 3, chips: 34, bonusMultiplier: 3, multiplier: 4 },
-    { kind: "protoceratops", chips: 34, bonusMultiplier: 3, multiplier: 4 }
+    { kind: "pattern-reproduction", chips: 11, bonusMultiplier: 2.5, multiplier: 3.5 },
+    { kind: "shadow-swap", chips: 16, bonusMultiplier: 1, multiplier: 2 },
+    { kind: "void-erosion", chips: 16, bonusMultiplier: 1, multiplier: 2 },
+    { kind: "world-mirror", chips: 17, bonusMultiplier: 2, multiplier: 3 },
+    { kind: "man-mirror", chips: 17, bonusMultiplier: 2, multiplier: 3 },
+    { kind: "shadow-targeting", gainedChipBonus: 27, chips: 38, bonusMultiplier: 1, multiplier: 2 },
+    { kind: "chaos-dice", rerolledCardCount: 9, chips: 15.5, bonusMultiplier: 1, multiplier: 2 },
+    { kind: "draven", chips: 11, bonusMultiplier: 3.5, multiplier: 4.5 },
+    { kind: "tomato-king", tomatoHits: 6, chips: 41, bonusMultiplier: 1, multiplier: 2 },
+    { kind: "tomato-shooter", tomatoThrows: 5, chips: 36, bonusMultiplier: 1, multiplier: 2 },
+    { kind: "bite-me", discardMultiplier: 3, chips: 11, bonusMultiplier: 3, multiplier: 4 },
+    { kind: "protoceratops", chips: 11, bonusMultiplier: 3, multiplier: 4 }
   ];
 
   for (const entry of cases) {
@@ -126,86 +156,89 @@ test("new persistent and late-game score battle effects apply their scoring rule
   assert.equal(changedStraight.multiplier, 15);
   assert.equal(changedStraight.score, 435);
 
-  const bread = scorePlay(straight, null, { persistentEffects: { breadButter: true } });
-  assert.equal(bread.multiplier, 7);
-  assert.equal(bread.score, 203);
+  const breadJam = scorePlay(straight, null, { persistentEffects: { breadJam: true } });
+  assert.equal(breadJam.chips, 32);
+  assert.equal(breadJam.multiplier, 7);
+  assert.equal(breadJam.score, 224);
 
   const breadCheese = scorePlay(cards(["4S", "4H", "4D", "8C", "9C"]), null, { persistentEffects: { breadCheese: true } });
   assert.equal(breadCheese.handId, "three-kind");
-  assert.equal(breadCheese.multiplier, 7);
+  assert.equal(breadCheese.chips, 24);
+  assert.equal(breadCheese.multiplier, 5);
 
-  const breadJam = scorePlay(cards(["4S", "4H", "7D", "7C", "9C"]), null, { persistentEffects: { breadJam: true } });
-  assert.equal(breadJam.handId, "two-pair");
-  assert.equal(breadJam.multiplier, 7);
+  const breadButter = scorePlay(cards(["4S", "4H", "7D", "7C", "9C"]), null, { persistentEffects: { breadButter: true } });
+  assert.equal(breadButter.handId, "two-pair");
+  assert.equal(breadButter.chips, 27);
+  assert.equal(breadButter.multiplier, 5);
 
   const astral = scorePlay(high, { kind: "astral-body" }, { persistentEffects: { astralBody: true } });
-  assert.equal(astral.score, 1017);
+  assert.equal(astral.score, 1005);
 
   const tempered = scorePlay(high, null, {
     persistentEffects: { temperedTomato: true },
     tomatoCounts: { hitsTotal: 90, throwsTotal: 60 }
   });
-  assert.equal(tempered.chips, 91);
-  assert.equal(tempered.score, 91);
+  assert.equal(tempered.chips, 296);
+  assert.equal(tempered.score, 296);
 
   const fundamentals = scorePlay(high, null, { round: 4, persistentEffects: { returningFundamentals: true } });
-  assert.equal(fundamentals.chips, 54);
+  assert.equal(fundamentals.chips, 26);
   assert.equal(fundamentals.multiplier, 2.5);
-  assert.equal(fundamentals.score, 135);
+  assert.equal(fundamentals.score, 65);
 
   const sword = scorePlay(high, null, { round: 5, persistentEffects: { drawSword: true } });
-  assert.equal(sword.chips, 52);
-  assert.equal(sword.multiplier, 3.75);
-  assert.equal(sword.score, 195);
+  assert.equal(sword.chips, 26);
+  assert.equal(sword.multiplier, 3);
+  assert.equal(sword.score, 78);
 
   const criticalExpected = scorePlay(high, null, { persistentEffects: { criticalHit: true }, criticalExpected: true });
-  assert.equal(criticalExpected.chips, 46.75);
-  assert.equal(criticalExpected.score, 46);
+  assert.equal(criticalExpected.chips, 15.125);
+  assert.equal(criticalExpected.score, 15);
 
   const criticalRolled = scorePlay(high, null, {
     persistentEffects: { criticalHit: true },
     criticalRolls: [true, false, true, false, true]
   });
-  assert.equal(criticalRolled.chips, 49);
-  assert.equal(criticalRolled.score, 49);
-  assert.equal(criticalRolled.cardValues.filter((entry) => entry.bonuses.some((bonus) => bonus.kind === "critical-hit" && bonus.critical)).length, 3);
+  assert.equal(criticalRolled.chips, 19.25);
+  assert.equal(criticalRolled.score, 19);
+  assert.equal(criticalRolled.cardValues.filter((entry) => entry.bonuses.some((bonus) => bonus.kind === "critical-hit" && bonus.critical)).length, 1);
 
   const infinityExpected = scorePlay(high, null, { persistentEffects: { infinityEdge: true }, criticalExpected: true });
-  assert.equal(infinityExpected.chips, 44.625);
-  assert.equal(infinityExpected.score, 44);
+  assert.equal(infinityExpected.chips, 14.4375);
+  assert.equal(infinityExpected.score, 14);
 
   const stackedCriticalExpected = scorePlay(high, null, { persistentEffects: { criticalHit: true, infinityEdge: true }, criticalExpected: true });
-  assert.equal(stackedCriticalExpected.chips, 65.875);
-  assert.equal(stackedCriticalExpected.score, 65);
+  assert.equal(stackedCriticalExpected.chips, 21.3125);
+  assert.equal(stackedCriticalExpected.score, 21);
 
   const stackedCriticalRolled = scorePlay(high, null, {
     persistentEffects: { criticalHit: true, infinityEdge: true },
     criticalRolls: [true, false, true, false, true]
   });
-  assert.equal(stackedCriticalRolled.chips, 59);
-  assert.equal(stackedCriticalRolled.score, 59);
+  assert.equal(stackedCriticalRolled.chips, 24.75);
+  assert.equal(stackedCriticalRolled.score, 24);
 
   const switchExpected = scorePlay(high, null, { persistentEffects: { criticalSwitchHand: true }, criticalExpected: true });
-  assert.equal(switchExpected.chips, 40.375);
-  assert.equal(switchExpected.score, 40);
+  assert.equal(switchExpected.chips, 13.0625);
+  assert.equal(switchExpected.score, 13);
 
   const brutal = scorePlay(high, { kind: "brutal-force" });
-  assert.equal(brutal.chips, 59);
+  assert.equal(brutal.chips, 36);
   assert.equal(brutal.multiplier, 2);
-  assert.equal(brutal.score, 118);
+  assert.equal(brutal.score, 72);
 
   const vigorous = scorePlay(high, { kind: "vigorous" });
-  assert.equal(vigorous.chips, 51);
-  assert.equal(vigorous.score, 51);
+  assert.equal(vigorous.chips, 16.5);
+  assert.equal(vigorous.score, 16);
   assert.equal(vigorous.chipFactors[0].factor, 1.5);
 
   const refresher = scorePlay(high, { kind: "refresher-orb" });
   assert.equal(refresher.multiplier, 2);
-  assert.equal(refresher.score, 68);
+  assert.equal(refresher.score, 22);
 
   const matthew = scorePlay(high, { kind: "matthew-effect" });
   assert.equal(matthew.multiplier, 3);
-  assert.equal(matthew.score, 102);
+  assert.equal(matthew.score, 33);
 
   const giant = scorePlay(high, null, {
     persistentEffects: { giantKiller: true },
@@ -213,7 +246,7 @@ test("new persistent and late-game score battle effects apply their scoring rule
     highestTotalScoreBeforeRound: 500
   });
   assert.equal(giant.scoreFactors[0].factor, 1.5);
-  assert.equal(giant.score, 51);
+  assert.equal(giant.score, 16);
 });
 
 test("void seal owner gains chips and multiplier for the sealed suit", () => {
@@ -222,10 +255,10 @@ test("void seal owner gains chips and multiplier for the sealed suit", () => {
     roundEffects: [{ kind: "void-suit", suit: "S", amount: 3, sourceSeatId: "seat-a" }]
   });
   assert.equal(result.handId, "one-pair");
-  assert.equal(result.chips, 30);
+  assert.equal(result.chips, 16);
   assert.equal(result.bonusMultiplier, 1);
   assert.equal(result.multiplier, 3);
-  assert.equal(result.score, 90);
+  assert.equal(result.score, 48);
   assert.equal(result.cardValues.filter((entry) => entry.code.endsWith("S")).every((entry) => entry.bonuses.some((bonus) => bonus.amount === 4)), true);
 });
 
