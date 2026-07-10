@@ -1642,8 +1642,8 @@ function battleBalanceRuleText() {
       "歌莉娅：自己的手牌在不改变花色的前提下变为 8、9、10、J、Q、K 中不完全相同的点数。",
       "虚空索敌：选择自己的两张手牌并指定一名尚未出牌的目标，与其随机两张手牌交换；本回合倍率 +1，并额外加上换得两张牌的点数和。",
       "混沌骰子：将所有尚未出牌玩家的手牌重发；选择者本回合倍率 +1，并额外加上重发手牌总数 x0.5 点。",
-      "番茄大王：本回合倍率 +1；本局内本回合之前被其他玩家投掷番茄命中的次数 x5 加到手牌点数。",
-      "番茄射手：本回合倍率 +1；本局内本回合之前向其他玩家投掷番茄的次数 x5 加到手牌点数。",
+      "番茄大王：本回合倍率 +1；手牌按牌型倍率结算后，在最终分额外加上本局此前被其他玩家投掷番茄命中的次数 ×1.5。每局一次。",
+      "番茄射手：本回合倍率 +1；手牌按牌型倍率结算后，在最终分额外加上本局此前向其他玩家投掷番茄的次数 ×1.5。每局一次。",
       "同花大顺：打出同花顺时，最终分 +1000。",
       "质变：顺子：若打出顺子，按同花顺倍率计算。每局一次。",
       "双角龙：本回合倍率 +3；本局番茄命中和投掷有效计数变为 3 倍，包括选择前已有计数。",
@@ -1651,7 +1651,7 @@ function battleBalanceRuleText() {
       "面包和黄油：本局之后所有两对牌型倍率 +2，基础点数 +5。",
       "面包和果酱：本局之后所有顺子牌型倍率 +2，基础点数 +3。",
       "星界身体：本回合最终分 +1000；从本回合开始，本局之后每回合最终得分降低至 50%。每局一次。",
-      "钢化番茄：从本回合开始持续判定；若有效命中次数超过 30 或有效投掷次数超过 50，每回合点数额外加入（命中x0.5 + 投掷x0.2）x5，并保留一位小数。",
+      "钢化番茄：从本回合开始持续判定；若有效命中次数超过 30 或有效投掷次数超过 50，每回合在手牌结算后额外加入（命中×0.5 + 投掷×0.2）×0.5，并保留一位小数。每局一次。",
       "回归基本功：只在第 2/3 回合出现；之后不能再选特效；第 2/3/4/5 回合分别获得 +12/+15/+15/+18 点数和 +1.25/+1.5/+1.5/+1.75 倍率。",
       "亮出你的剑：只在第 2/3 回合出现；之后不能再弃牌；第 2/3/4/5 回合分别获得 +12/+12/+12/+15 点数和 +1.5/+1.75/+1.75/+2 倍率。刷新球可重新允许弃牌但保留亮剑加成。",
       "关键暴击：从本回合开始，参与牌型计分的牌有 50% 几率暴击，暴击点数 x1.75。",
@@ -1685,8 +1685,8 @@ function battleBalanceRuleText() {
     "GOELIA: your hand cards become non-identical ranks from 8, 9, 10, J, Q, and K while keeping suits.",
     "Shadow Targeting: swap two hand cards with two random cards from an unplayed target. This round gains +1 multiplier and extra chips equal to the gained cards' chip values.",
     "Chaos Dice: reroll every unplayed player's hand. The selector gains +1 multiplier and bonus chips equal to total rerolled hand cards x0.5.",
-    "King of the Tomato: this round gains +1 multiplier; earlier tomato hits against you this game add hits x5 chips. Once per game.",
-    "Tomato Shooter: this round gains +1 multiplier; earlier tomatoes you threw this game add throws x5 chips. Once per game.",
+    "King of the Tomato: this round gains +1 multiplier; after hand scoring, earlier tomato hits against you this game add hits x1.5 to final score. Once per game.",
+    "Tomato Shooter: this round gains +1 multiplier; after hand scoring, earlier tomatoes you threw this game add throws x1.5 to final score. Once per game.",
     "Straight Flush: when you play a Straight Flush, gain +1000 final score.",
     "Change: Straight: if your played hand is a Straight, calculate its multiplier as a Straight Flush. Once per game.",
     "Protoceratops: this round gains +3 multiplier. Your effective tomato hit and throw counts become three times their raw values for the whole game. Once per game.",
@@ -1694,7 +1694,7 @@ function battleBalanceRuleText() {
     "Bread and butter: for the rest of this game, your Two Pair gains +2 multiplier and +5 chips. Once per game.",
     "Bread and Jam: for the rest of this game, your Straights gain +2 multiplier and +3 chips. Once per game.",
     "Astral Body: this round gains +1000 final score, but later scores this game are halved. Once per game.",
-    "Tempered Tomato: from this round onward, thresholds are checked continuously. Once effective hits exceed 30 or throws exceed 50, each round adds (hits x0.5 + throws x0.2) x5 chips, rounded to one decimal. Once per game.",
+    "Tempered Tomato: from this round onward, thresholds are checked continuously. Once effective hits exceed 30 or throws exceed 50, each round adds (hits x0.5 + throws x0.2) x0.5 to final score after hand scoring, rounded to one decimal. Once per game.",
     "Returning to the fundamentals: only appears in rounds 2/3. You cannot choose more effects. Rounds 2/3/4/5 gain +12/+15/+15/+18 chips and +1.25/+1.5/+1.5/+1.75 multiplier. Once per game.",
     "Draw your sword: only appears in rounds 2/3. You cannot discard. Rounds 2/3/4/5 gain +12/+12/+12/+15 chips and +1.5/+1.75/+1.75/+2 multiplier. Once per game. Refresher Orb can re-enable discards without removing these bonuses.",
     "Critical Hit: from this round onward, scoring-hand cards have 50% crit chance for x1.75 chips. Once per game.",
@@ -3252,6 +3252,25 @@ function battleEffectDescription(effect) {
 function battleBalanceEffectDescription(effect) {
   if (!effect) return "";
   const suit = battleSuitName(effect.suit);
+  if (effect.kind === "tomato-king") {
+    const hits = Math.max(0, Number(effect.tomatoHits) || 0);
+    const bonus = Math.round(hits * 1.5 * 10) / 10;
+    return isZh()
+      ? `本回合倍率 +1；手牌按牌型倍率结算后，最终分额外 +${bonus}（此前被命中 ${hits} 次 ×1.5）。每局一次。`
+      : `This round gains +1 mult; after hand scoring, add +${bonus} final score (${hits} earlier hits x1.5). Once per game.`;
+  }
+  if (effect.kind === "tomato-shooter") {
+    const throws = Math.max(0, Number(effect.tomatoThrows) || 0);
+    const bonus = Math.round(throws * 1.5 * 10) / 10;
+    return isZh()
+      ? `本回合倍率 +1；手牌按牌型倍率结算后，最终分额外 +${bonus}（此前投掷 ${throws} 次 ×1.5）。每局一次。`
+      : `This round gains +1 mult; after hand scoring, add +${bonus} final score (${throws} earlier throws x1.5). Once per game.`;
+  }
+  if (effect.kind === "tempered-tomato") {
+    return isZh()
+      ? "持续判定番茄阈值；达标后每回合在手牌结算后额外加入（命中×0.5 + 投掷×0.2）×0.5 最终分。每局一次。"
+      : "Continuously checks tomato thresholds; once active, after hand scoring add (hits x0.5 + throws x0.2) x0.5 final score each round. Once per game.";
+  }
   if (effect.kind === "suit-chip") {
     return isZh()
       ? `打出的${suit}每张 +${effect.amount} 点；即使该牌不参与牌型计分，也可以获得这项加成。`

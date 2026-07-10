@@ -90,8 +90,6 @@ test("specific interaction effects use their new balance rules", () => {
     { kind: "shadow-targeting", gainedChipBonus: 27, chips: 38, bonusMultiplier: 1, multiplier: 2 },
     { kind: "chaos-dice", rerolledCardCount: 9, chips: 15.5, bonusMultiplier: 1, multiplier: 2 },
     { kind: "draven", chips: 11, bonusMultiplier: 3.5, multiplier: 4.5 },
-    { kind: "tomato-king", tomatoHits: 6, chips: 41, bonusMultiplier: 1, multiplier: 2 },
-    { kind: "tomato-shooter", tomatoThrows: 5, chips: 36, bonusMultiplier: 1, multiplier: 2 },
     { kind: "bite-me", discardMultiplier: 3, chips: 11, bonusMultiplier: 3, multiplier: 4 },
     { kind: "protoceratops", chips: 11, bonusMultiplier: 3, multiplier: 4 }
   ];
@@ -103,6 +101,32 @@ test("specific interaction effects use their new balance rules", () => {
     assert.equal(result.bonusMultiplier, entry.bonusMultiplier);
     assert.equal(result.multiplier, entry.multiplier);
   }
+});
+
+test("tomato bonuses are added after hand scoring", () => {
+  const high = cards(["2S", "5H", "7D", "9C", "JS"]);
+  const king = scorePlay(high, { kind: "tomato-king", tomatoHits: 6 });
+  assert.equal(king.chips, 11);
+  assert.equal(king.multiplier, 2);
+  assert.equal(king.score, 31);
+  assert.deepEqual(king.scoreBonuses, [{ kind: "tomato-king", amount: 9 }]);
+  assert.equal(king.globalChipBonuses.some((bonus) => bonus.kind === "tomato-king"), false);
+
+  const shooter = scorePlay(high, { kind: "tomato-shooter", tomatoThrows: 5 });
+  assert.equal(shooter.chips, 11);
+  assert.equal(shooter.multiplier, 2);
+  assert.equal(shooter.score, 29);
+  assert.deepEqual(shooter.scoreBonuses, [{ kind: "tomato-shooter", amount: 7.5 }]);
+
+  const tempered = scorePlay(cards(["4S", "4H", "7D", "7C", "9C"]), null, {
+    persistentEffects: { temperedTomato: true },
+    tomatoCounts: { hitsTotal: 90, throwsTotal: 60 }
+  });
+  assert.equal(tempered.chips, 22);
+  assert.equal(tempered.multiplier, 3);
+  assert.equal(tempered.score, 94);
+  assert.deepEqual(tempered.scoreBonuses, [{ kind: "tempered-tomato", amount: 28.5 }]);
+  assert.equal(tempered.globalChipBonuses.some((bonus) => bonus.kind === "tempered-tomato"), false);
 });
 
 test("effect option generation can exclude once-per-game effects", () => {
@@ -179,8 +203,8 @@ test("new persistent and late-game score battle effects apply their scoring rule
     persistentEffects: { temperedTomato: true },
     tomatoCounts: { hitsTotal: 90, throwsTotal: 60 }
   });
-  assert.equal(tempered.chips, 296);
-  assert.equal(tempered.score, 296);
+  assert.equal(tempered.chips, 11);
+  assert.equal(tempered.score, 39);
 
   const fundamentals = scorePlay(high, null, { round: 4, persistentEffects: { returningFundamentals: true } });
   assert.equal(fundamentals.chips, 26);

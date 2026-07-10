@@ -355,11 +355,11 @@ function scorePlay(cards, effect, context = {}) {
     addGlobalChipBonus(effect.kind, effect.amount || 10);
   }
   if (effect?.kind === "tomato-king") {
-    addGlobalChipBonus(effect.kind, (Number(effect.tomatoHits) || 0) * 5);
+    addScoreBonus(effect.kind, Math.round((Number(effect.tomatoHits) || 0) * 1.5 * 10) / 10);
     addMultiplierBonus(effect.kind, 1);
   }
   if (effect?.kind === "tomato-shooter") {
-    addGlobalChipBonus(effect.kind, (Number(effect.tomatoThrows) || 0) * 5);
+    addScoreBonus(effect.kind, Math.round((Number(effect.tomatoThrows) || 0) * 1.5 * 10) / 10);
     addMultiplierBonus(effect.kind, 1);
   }
   if (effect?.kind === "bite-me") {
@@ -400,7 +400,7 @@ function scorePlay(cards, effect, context = {}) {
     const hits = Math.max(0, Number(tomatoCounts.hitsTotal) || 0);
     const throws = Math.max(0, Number(tomatoCounts.throwsTotal) || 0);
     if (hits > 30 || throws > 50) {
-      addGlobalChipBonus("tempered-tomato", Math.round((hits * 0.5 + throws * 0.2) * 5 * 10) / 10);
+      addScoreBonus("tempered-tomato", Math.round((hits * 0.5 + throws * 0.2) * 0.5 * 10) / 10);
     }
   }
   if (persistentEffects.returningFundamentals) {
