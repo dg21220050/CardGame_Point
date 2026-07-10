@@ -429,7 +429,9 @@ function scorePlay(cards, effect, context = {}) {
   let multiplier = additiveMultiplierTotal;
   for (const entry of multiplierFactors) multiplier *= entry.factor;
   const scoreBeforeBonuses = chips * multiplier * scoreFactor;
-  const score = Math.min(1000000, Math.max(0, Math.floor(scoreBeforeBonuses + flatScoreBonus)));
+  const rawScore = scoreBeforeBonuses + flatScoreBonus;
+  const hasTomatoScoreBonus = scoreBonuses.some((bonus) => ["tomato-king", "tomato-shooter", "tempered-tomato"].includes(bonus.kind));
+  const score = Math.min(1000000, Math.max(0, hasTomatoScoreBonus ? Math.round(rawScore * 10) / 10 : Math.floor(rawScore)));
 
   return {
     handId: hand.id,

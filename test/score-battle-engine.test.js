@@ -115,7 +115,7 @@ test("tomato bonuses are added after hand scoring", () => {
   const shooter = scorePlay(high, { kind: "tomato-shooter", tomatoThrows: 5 });
   assert.equal(shooter.chips, 11);
   assert.equal(shooter.multiplier, 2);
-  assert.equal(shooter.score, 29);
+  assert.equal(shooter.score, 29.5);
   assert.deepEqual(shooter.scoreBonuses, [{ kind: "tomato-shooter", amount: 7.5 }]);
 
   const tempered = scorePlay(cards(["4S", "4H", "7D", "7C", "9C"]), null, {
@@ -124,7 +124,7 @@ test("tomato bonuses are added after hand scoring", () => {
   });
   assert.equal(tempered.chips, 22);
   assert.equal(tempered.multiplier, 3);
-  assert.equal(tempered.score, 94);
+  assert.equal(tempered.score, 94.5);
   assert.deepEqual(tempered.scoreBonuses, [{ kind: "tempered-tomato", amount: 28.5 }]);
   assert.equal(tempered.globalChipBonuses.some((bonus) => bonus.kind === "tempered-tomato"), false);
 });
@@ -204,7 +204,7 @@ test("new persistent and late-game score battle effects apply their scoring rule
     tomatoCounts: { hitsTotal: 90, throwsTotal: 60 }
   });
   assert.equal(tempered.chips, 11);
-  assert.equal(tempered.score, 39);
+  assert.equal(tempered.score, 39.5);
 
   const fundamentals = scorePlay(high, null, { round: 4, persistentEffects: { returningFundamentals: true } });
   assert.equal(fundamentals.chips, 26);
