@@ -273,6 +273,7 @@ Object.assign(zhText, {
 });
 
 Object.assign(zhText, {
+  "Password changes are available from Profile, and admin feedback is available from the main page.": "\u4fee\u6539\u5bc6\u7801\u4ecd\u5728\u4e2a\u4eba\u8d44\u6599\u4e2d\uff0c\u7ed9\u7ba1\u7406\u5458\u7559\u8a00\u5df2\u79fb\u81f3\u4e3b\u9875\u9762\u3002",
   "Balance tuning and scoring logic update.": "\u5e73\u8861\u6027\u8c03\u6574\u4e0e\u8ba1\u5206\u903b\u8f91\u4fee\u6539",
   "Base scoring now only counts cards that form the made hand, unless a specific effect adds bonus chips.": "\u5e95\u5c42\u903b\u8f91\u4e2d\u76ee\u524d\u53ea\u6709\u51d1\u51fa\u7684\u724c\u578b\u7684\u724c\u624d\u8ba1\u5206\uff0c\u9664\u975e\u6709\u7279\u5b9a\u7279\u6548\u52a0\u6210\u3002",
   "Attack speed": "\u653b\u901f",
@@ -1051,7 +1052,7 @@ function appendUpdateNotice() {
         el("button", { className: "ghost modal-close", type: "button", onclick: dismissUpdateNotice, "aria-label": t("Got it") }, ["x"])
       ]),
       el("ul", { className: "update-list" }, [
-        el("li", {}, [t("Password changes and admin feedback are available from Profile.")]),
+        el("li", {}, [t("Password changes are available from Profile, and admin feedback is available from the main page.")]),
         el("li", {}, [t("Account popups now keep typed text while the table refreshes.")]),
         el("li", {}, [t("Score Battle table chat is now available from the right panel.")]),
         el("li", {}, [t("Balance tuning and scoring logic update.")]),
@@ -1071,7 +1072,7 @@ function updateHistoryEntries() {
     {
       version: "0.0.6",
       items: [
-        "Password changes and admin feedback are available from Profile.",
+        "Password changes are available from Profile, and admin feedback is available from the main page.",
         "Account popups now keep typed text while the table refreshes.",
         "Score Battle hosts can now add CPU players.",
         "Score Battle table chat is now available from the right panel.",
@@ -1330,7 +1331,7 @@ function appendFeedbackModal() {
     el("section", { className: "update-modal", role: "dialog", "aria-modal": "true", "aria-labelledby": "feedback-title" }, [
       el("div", { className: "modal-head" }, [
         el("div", {}, [
-          el("span", { className: "pill" }, [t("Profile")]),
+          el("span", { className: "pill" }, [t("Message admin")]),
           el("h2", { id: "feedback-title" }, [t("Feedback to admin")])
         ]),
         el("button", { className: "ghost modal-close", type: "button", onclick: closeFeedbackModal, "aria-label": t("Close") }, ["x"])
@@ -1931,14 +1932,6 @@ function renderProfilePanel() {
             render();
           }
         }, [t("Change password")]),
-        el("button", {
-          className: "ghost",
-          type: "button",
-          onclick: () => {
-            state.showFeedbackModal = true;
-            render();
-          }
-        }, [t("Message admin")])
       ])
     ]),
     el("div", { className: "profile-stats" }, [
@@ -2365,6 +2358,14 @@ function renderScoreLobby() {
     type: "button",
     onclick: openBattleRules
   }, [t("Scoring rules")]));
+  panel.appendChild(el("button", {
+    className: "secondary full-width",
+    type: "button",
+    onclick: () => {
+      state.showFeedbackModal = true;
+      render();
+    }
+  }, [t("Message admin")]));
 
   const list = el("div", { className: "table-list" });
   if (state.scoreTables.length === 0) {
