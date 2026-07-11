@@ -148,6 +148,10 @@ function createEffectOptions(options = {}) {
     () => ({ kind: "rambo", amount: 10, seconds: 15 }),
     () => ({ kind: "tomato-king" }),
     () => ({ kind: "tomato-shooter" }),
+    () => ({ kind: "runaans-hurricane" }),
+    () => ({ kind: "old-days-tomatoes" }),
+    () => ({ kind: "lord-dominicks-regards" }),
+    () => ({ kind: "collector" }),
     () => ({ kind: "bite-me" }),
     () => ({ kind: "straight-flush-boost" }),
     () => ({ kind: "change-straight" }),
@@ -189,6 +193,7 @@ function effectAllowedInRound(kind, round) {
   if (["returning-fundamentals", "draw-sword"].includes(kind)) {
     return numericRound >= 2 && numericRound <= 3;
   }
+  if (kind === "old-days-tomatoes") return numericRound === 5;
   return true;
 }
 
@@ -355,12 +360,22 @@ function scorePlay(cards, effect, context = {}) {
     addGlobalChipBonus(effect.kind, effect.amount || 10);
   }
   if (effect?.kind === "tomato-king") {
-    addScoreBonus(effect.kind, Math.round((Number(effect.tomatoHits) || 0) * 1.5 * 10) / 10);
+    addScoreBonus(effect.kind, Math.round((Number(effect.tomatoHits) || 0) * 2 * 10) / 10);
     addMultiplierBonus(effect.kind, 1);
   }
   if (effect?.kind === "tomato-shooter") {
-    addScoreBonus(effect.kind, Math.round((Number(effect.tomatoThrows) || 0) * 1.5 * 10) / 10);
+    addScoreBonus(effect.kind, Math.round((Number(effect.tomatoThrows) || 0) * 2 * 10) / 10);
     addMultiplierBonus(effect.kind, 1);
+  }
+  if (effect?.kind === "old-days-tomatoes") {
+    addGlobalChipBonus(effect.kind, Math.max(0, Number(effect.tomatoHits) || 0) * 0.5);
+  }
+  if (effect?.kind === "dance-illusions") {
+    addGlobalChipBonus(effect.kind, 5);
+    addMultiplierBonus(effect.kind, 1.5);
+  }
+  if (effect?.kind === "collector") {
+    addGlobalChipBonus(effect.kind, 10);
   }
   if (effect?.kind === "bite-me") {
     addMultiplierBonus(effect.kind, Math.max(0, Number(effect.discardMultiplier) || 0));
@@ -400,18 +415,21 @@ function scorePlay(cards, effect, context = {}) {
     const hits = Math.max(0, Number(tomatoCounts.hitsTotal) || 0);
     const throws = Math.max(0, Number(tomatoCounts.throwsTotal) || 0);
     if (hits > 30 || throws > 50) {
-      addScoreBonus("tempered-tomato", Math.round((hits * 0.5 + throws * 0.2) * 0.5 * 10) / 10);
+      addScoreBonus("tempered-tomato", Math.round((hits * 0.5 + throws * 0.2) * 0.75 * 10) / 10);
     }
   }
   if (persistentEffects.returningFundamentals) {
-    const bonuses = roundScaling(round, [0, 0, 12, 15, 15, 18], [0, 0, 1.25, 1.5, 1.5, 1.75]);
+    const bonuses = roundScaling(round, [0, 0, 18, 18, 18, 18], [0, 0, 1.5, 1.5, 1.5, 1.75]);
     addGlobalChipBonus("returning-fundamentals", bonuses.chips);
     addMultiplierBonus("returning-fundamentals", bonuses.multiplier);
   }
   if (persistentEffects.drawSword) {
-    const bonuses = roundScaling(round, [0, 0, 12, 12, 12, 15], [0, 0, 1.5, 1.75, 1.75, 2]);
+    const bonuses = roundScaling(round, [0, 0, 15, 15, 15, 15], [0, 0, 2.25, 2.25, 2.25, 2.25]);
     addGlobalChipBonus("draw-sword", bonuses.chips);
     addMultiplierBonus("draw-sword", bonuses.multiplier);
+  }
+  if (persistentEffects.lordDominicksRegards && ["high-card", "one-pair", "two-pair", "three-kind", "straight"].includes(hand.id)) {
+    addMultiplierBonus("lord-dominicks-regards", Math.max(0, 6 - hand.multiplier));
   }
   if (persistentEffects.astralBody) {
     addScoreFactor("astral-body-penalty", 0.5);
@@ -430,8 +448,7 @@ function scorePlay(cards, effect, context = {}) {
   for (const entry of multiplierFactors) multiplier *= entry.factor;
   const scoreBeforeBonuses = chips * multiplier * scoreFactor;
   const rawScore = scoreBeforeBonuses + flatScoreBonus;
-  const hasTomatoScoreBonus = scoreBonuses.some((bonus) => ["tomato-king", "tomato-shooter", "tempered-tomato"].includes(bonus.kind));
-  const score = Math.min(1000000, Math.max(0, hasTomatoScoreBonus ? Math.round(rawScore * 10) / 10 : Math.floor(rawScore)));
+  const score = Math.min(1000000, Math.max(0, Math.floor(rawScore)));
 
   return {
     handId: hand.id,
@@ -471,6 +488,9 @@ function criticalProfileForEffects(persistentEffects = {}) {
   }
   if (persistentEffects.criticalSwitchHand) chance += 0.25;
   if (persistentEffects.danceIllusions) chance += 0.25;
+  if (persistentEffects.runaansHurricane) chance += 0.25;
+  if (persistentEffects.lordDominicksRegards) chance += 0.25;
+  if (persistentEffects.collector) chance += 0.25;
   return {
     chance: Math.min(1, Math.max(0, chance)),
     multiplier
@@ -490,10 +510,10 @@ function giantKillerScoreFactor(context = {}) {
   const gap = leaderTotal - seatTotal;
   if (gap <= 0) return 1;
   if (gap <= 100) return 1.3;
-  if (gap <= 200) return 1.4;
-  if (gap <= 300) return 1.5;
-  if (gap <= 400) return 1.6;
-  return 1.7;
+  if (gap <= 200) return 1.5;
+  if (gap <= 300) return 1.7;
+  if (gap <= 400) return 2;
+  return 2.5;
 }
 
 function findBestPlay(handCards, communityCards, effect, options = {}) {
@@ -546,6 +566,7 @@ module.exports = {
   SUITS,
   createDeck,
   createEffectOptions,
+  effectAllowedInRound,
   criticalProfileForEffects,
   displayCode,
   findBestPlay,

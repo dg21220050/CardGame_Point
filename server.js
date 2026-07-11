@@ -41,6 +41,7 @@ const TABLE_PRUNE_INTERVAL_MS = 15 * 1000;
 const TOMATO_EVENT_TTL_MS = 8 * 1000;
 const DEFAULT_TOMATO_ATTACK_SPEED = 1;
 const DANCE_ILLUSIONS_ATTACK_SPEED_BONUS = 0.65;
+const RUNAANS_HURRICANE_ATTACK_SPEED_BONUS = 0.4;
 const MIN_TOMATO_INTERVAL_MS = 200;
 const SCORE_BATTLE_MAX_SEATS = 6;
 const SCORE_BATTLE_MIN_PLAYERS = 2;
@@ -51,6 +52,9 @@ const SCORE_BATTLE_RESULT_SECONDS = 6;
 const SCORE_BATTLE_ONCE_PER_GAME_EFFECTS = new Set([
   "tomato-king",
   "tomato-shooter",
+  "runaans-hurricane",
+  "lord-dominicks-regards",
+  "collector",
   "change-straight",
   "protoceratops",
   "bread-butter",
@@ -1962,6 +1966,7 @@ function createScoreSeatState(options) {
     submitted: false,
     roundScore: 0,
     totalScore: 0,
+    collectorTomatoThrowBonus: 0,
     winCount: 0,
     lastResult: null
   };
@@ -2101,6 +2106,7 @@ function startScoreBattle(table) {
     seat.submitted = false;
     seat.roundScore = 0;
     seat.totalScore = 0;
+    seat.collectorTomatoThrowBonus = 0;
     seat.lastResult = null;
   }
   beginScoreBattleRound(table);
@@ -2114,6 +2120,7 @@ function beginScoreBattleRound(table) {
     table.previousRoundLeaderSeatIds = table.currentRoundLeaderSeatIds || [];
   }
   table.currentRoundLeaderSeatIds = [];
+  applyCollectorRoundStartBonuses(table);
   table.community = dealScoreCommunity(table);
   table.roundStartTotals = Object.create(null);
   for (const seat of activeScoreSeats(table)) {
@@ -2228,6 +2235,10 @@ function scoreEffectLogName(effect) {
     rambo: "Rambo",
     "tomato-king": "King of the Tomato",
     "tomato-shooter": "Tomato Shooter",
+    "runaans-hurricane": "Runaan's Hurricane",
+    "old-days-tomatoes": "Old days' Tomatoes",
+    "lord-dominicks-regards": "Lord Dominick's Regards",
+    collector: "The Collector",
     "bite-me": "Bite me",
     "straight-flush-boost": "Straight Flush",
     "change-straight": "Change: Straight",
@@ -2289,6 +2300,9 @@ function scoreEffectForSeat(table, seat) {
   if (effect.kind === "tomato-shooter") {
     effect.tomatoThrows = counts.throwsBeforeRound;
   }
+  if (effect.kind === "old-days-tomatoes") {
+    effect.tomatoHits = counts.hitsBeforeRound;
+  }
   if (effect.kind === "bite-me") {
     effect.discardMultiplier = Math.max(0, Number(seat.discardUsesLeft) || 0);
   }
@@ -2319,6 +2333,7 @@ function scoreContextForSeat(table, seat, options = {}) {
 
 function scoreTomatoCountsForSeat(table, seat) {
   const multiplier = seat.persistentEffects?.protoceratops ? 3 : 1;
+  const collectorThrowBonus = Math.max(0, Number(seat.collectorTomatoThrowBonus) || 0);
   const rawHitsBeforeRound = countScoreTomatoHits(table, seat, "toSeatId", true);
   const rawThrowsBeforeRound = countScoreTomatoHits(table, seat, "fromSeatId", true);
   const rawHitsTotal = countScoreTomatoHits(table, seat, "toSeatId", false);
@@ -2329,11 +2344,29 @@ function scoreTomatoCountsForSeat(table, seat) {
     rawHitsTotal,
     rawThrowsTotal,
     hitsBeforeRound: rawHitsBeforeRound * multiplier,
-    throwsBeforeRound: rawThrowsBeforeRound * multiplier,
+    throwsBeforeRound: (rawThrowsBeforeRound + collectorThrowBonus) * multiplier,
     hitsTotal: rawHitsTotal * multiplier,
-    throwsTotal: rawThrowsTotal * multiplier,
+    throwsTotal: (rawThrowsTotal + collectorThrowBonus) * multiplier,
+    collectorThrowBonus,
     multiplier
   };
+}
+
+function applyCollectorRoundStartBonuses(table) {
+  const active = activeScoreSeats(table);
+  const previousLeaders = new Set(table.previousRoundLeaderSeatIds || []);
+  if (!previousLeaders.size) return;
+  const throwCounts = new Map(active.map((seat) => [seat.seatId, scoreTomatoCountsForSeat(table, seat).throwsBeforeRound]));
+  for (const seat of active) {
+    if (!seat.persistentEffects?.collector || !previousLeaders.has(seat.seatId)) continue;
+    const otherThrows = active
+      .filter((other) => other.seatId !== seat.seatId)
+      .reduce((sum, other) => sum + (throwCounts.get(other.seatId) || 0), 0);
+    const throwBonus = Math.floor(otherThrows * 0.1);
+    seat.discardUsesLeft = Math.max(0, Number(seat.discardUsesLeft) || 0) + 2;
+    seat.collectorTomatoThrowBonus = Math.max(0, Number(seat.collectorTomatoThrowBonus) || 0) + throwBonus;
+    table.messages.unshift(`${seat.displayName} collected 2 discard uses and ${throwBonus} tomato throws.`);
+  }
 }
 
 function countScoreTomatoHits(table, seat, seatField, beforeRoundOnly) {
@@ -2464,6 +2497,7 @@ function applyScoreEffect(table, seat, effect, payload) {
   }
   if (effect.kind === "returning-fundamentals") {
     seat.persistentEffects.returningFundamentals = true;
+    seat.discardUsesLeft = Math.max(0, Number(seat.discardUsesLeft) || 0) + 4;
     seat.effectOptions = [];
     return { ok: true, effect };
   }
@@ -2499,6 +2533,18 @@ function applyScoreEffect(table, seat, effect, payload) {
   }
   if (effect.kind === "dance-illusions") {
     seat.persistentEffects.danceIllusions = true;
+    return { ok: true, effect };
+  }
+  if (effect.kind === "runaans-hurricane") {
+    seat.persistentEffects.runaansHurricane = true;
+    return { ok: true, effect };
+  }
+  if (effect.kind === "lord-dominicks-regards") {
+    seat.persistentEffects.lordDominicksRegards = true;
+    return { ok: true, effect };
+  }
+  if (effect.kind === "collector") {
+    seat.persistentEffects.collector = true;
     return { ok: true, effect };
   }
   return { ok: true, effect };
@@ -2832,9 +2878,13 @@ function scoreBotEffectPriority(effect) {
     "matthew-effect": 42,
     "critical-hit": 41,
     "infinity-edge": 40,
+    "lord-dominicks-regards": 40,
+    "runaans-hurricane": 39,
     "giant-killer": 39,
     "critical-switch-hand": 38,
     "dance-illusions": 37,
+    collector: 36,
+    "old-days-tomatoes": 35,
     "returning-fundamentals": 35,
     "draw-sword": 34
   };
@@ -3078,6 +3128,10 @@ function scoreAttackSpeedProfileForSeat(seat) {
     speed += DANCE_ILLUSIONS_ATTACK_SPEED_BONUS;
     bonuses.push({ kind: "dance-illusions", amount: DANCE_ILLUSIONS_ATTACK_SPEED_BONUS });
   }
+  if (seat?.persistentEffects?.runaansHurricane) {
+    speed += RUNAANS_HURRICANE_ATTACK_SPEED_BONUS;
+    bonuses.push({ kind: "runaans-hurricane", amount: RUNAANS_HURRICANE_ATTACK_SPEED_BONUS });
+  }
   speed = Math.max(0.1, Math.round(speed * 100) / 100);
   return {
     speed,
@@ -3119,29 +3173,49 @@ function recordTomatoThrow(table, userId, targetSeatId) {
   bucket.attackSpeed = attackSpeedProfile.speed;
   table.tomatoBuckets[key] = bucket;
 
+  const events = [recordTomatoImpact(table, from, target, now)];
+  if (String(table.id || "").startsWith("score-") && from.persistentEffects?.runaansHurricane) {
+    for (const splitTarget of scoreTomatoSplitTargets(table, from)) {
+      events.push(recordTomatoImpact(table, from, splitTarget, now, true));
+    }
+  }
+  return { ok: true, event: events[0], events };
+}
+
+function recordTomatoImpact(table, from, target, now, isSplit = false) {
   const event = {
     id: crypto.randomBytes(8).toString("hex"),
     fromSeatId: from.seatId,
     toSeatId: target.seatId,
     fromName: from.displayName,
     toName: target.displayName,
+    isSplit: Boolean(isSplit),
     createdAt: now
   };
   table.tomatoEvents = (table.tomatoEvents || []).concat(event).slice(-80);
   recordScoreTomatoHit(table, from, target, now);
-  return { ok: true, event };
+  return event;
+}
+
+function scoreTomatoSplitTargets(table, from) {
+  const candidates = activeScoreSeats(table).filter((seat) => seat.seatId !== from.seatId);
+  if (!candidates.length) return [];
+  return Array.from({ length: 2 }, () => candidates[crypto.randomInt(candidates.length)]);
 }
 
 function recordScoreTomatoHit(table, from, target, now) {
   if (!String(table.id || "").startsWith("score-")) return;
   if (!table.gameNumber || !table.round || ["waiting", "finished"].includes(table.phase)) return;
-  const countsForThrower = !target?.persistentEffects?.danceIllusions;
+  const danceThrower = Boolean(from?.persistentEffects?.danceIllusions);
+  const danceTarget = Boolean(target?.persistentEffects?.danceIllusions);
+  const countedTarget = danceThrower ? from : target;
+  const countsForThrower = !danceThrower && !danceTarget;
   table.scoreTomatoHits = (table.scoreTomatoHits || []).filter((hit) => Number(hit.gameNumber) === Number(table.gameNumber));
   table.scoreTomatoHits.push({
     gameNumber: table.gameNumber,
     round: table.round,
     fromSeatId: from.seatId,
-    toSeatId: target.seatId,
+    toSeatId: countedTarget.seatId,
     countsForThrower,
     createdAt: now
   });
@@ -3351,6 +3425,9 @@ function scorePersistentEffectsForClient(seat) {
   if (persistent.matthewEffect) effects.push({ kind: "matthew-effect" });
   if (persistent.criticalSwitchHand) effects.push({ kind: "critical-switch-hand" });
   if (persistent.danceIllusions) effects.push({ kind: "dance-illusions" });
+  if (persistent.runaansHurricane) effects.push({ kind: "runaans-hurricane" });
+  if (persistent.lordDominicksRegards) effects.push({ kind: "lord-dominicks-regards" });
+  if (persistent.collector) effects.push({ kind: "collector" });
   return effects;
 }
 

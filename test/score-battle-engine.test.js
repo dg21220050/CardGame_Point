@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { createDeck, createEffectOptions, criticalProfileForEffects, findBestPlay, scorePlay } = require("../score-battle-engine");
+const { createDeck, createEffectOptions, criticalProfileForEffects, effectAllowedInRound, findBestPlay, scorePlay } = require("../score-battle-engine");
 
 function cards(codes) {
   const byCode = new Map(createDeck().map((card) => [card.code, card]));
@@ -108,15 +108,15 @@ test("tomato bonuses are added after hand scoring", () => {
   const king = scorePlay(high, { kind: "tomato-king", tomatoHits: 6 });
   assert.equal(king.chips, 11);
   assert.equal(king.multiplier, 2);
-  assert.equal(king.score, 31);
-  assert.deepEqual(king.scoreBonuses, [{ kind: "tomato-king", amount: 9 }]);
+  assert.equal(king.score, 34);
+  assert.deepEqual(king.scoreBonuses, [{ kind: "tomato-king", amount: 12 }]);
   assert.equal(king.globalChipBonuses.some((bonus) => bonus.kind === "tomato-king"), false);
 
   const shooter = scorePlay(high, { kind: "tomato-shooter", tomatoThrows: 5 });
   assert.equal(shooter.chips, 11);
   assert.equal(shooter.multiplier, 2);
-  assert.equal(shooter.score, 29.5);
-  assert.deepEqual(shooter.scoreBonuses, [{ kind: "tomato-shooter", amount: 7.5 }]);
+  assert.equal(shooter.score, 32);
+  assert.deepEqual(shooter.scoreBonuses, [{ kind: "tomato-shooter", amount: 10 }]);
 
   const tempered = scorePlay(cards(["4S", "4H", "7D", "7C", "9C"]), null, {
     persistentEffects: { temperedTomato: true },
@@ -124,8 +124,8 @@ test("tomato bonuses are added after hand scoring", () => {
   });
   assert.equal(tempered.chips, 22);
   assert.equal(tempered.multiplier, 3);
-  assert.equal(tempered.score, 94.5);
-  assert.deepEqual(tempered.scoreBonuses, [{ kind: "tempered-tomato", amount: 28.5 }]);
+  assert.equal(tempered.score, 108);
+  assert.deepEqual(tempered.scoreBonuses, [{ kind: "tempered-tomato", amount: 42.8 }]);
   assert.equal(tempered.globalChipBonuses.some((bonus) => bonus.kind === "tempered-tomato"), false);
 });
 
@@ -134,6 +134,9 @@ test("effect option generation can exclude once-per-game effects", () => {
     const excludedKinds = [
       "tomato-king",
       "tomato-shooter",
+      "runaans-hurricane",
+      "lord-dominicks-regards",
+      "collector",
       "change-straight",
       "protoceratops",
       "bread-butter",
@@ -159,9 +162,14 @@ test("effect option generation can exclude once-per-game effects", () => {
 test("returning and sword effects are limited to rounds two and three", () => {
   for (let index = 0; index < 50; index += 1) {
     const options = createEffectOptions({ round: 4 });
-    assert.equal(options.some((effect) => ["returning-fundamentals", "draw-sword"].includes(effect.kind)), false);
+    assert.equal(options.some((effect) => ["returning-fundamentals", "draw-sword", "old-days-tomatoes"].includes(effect.kind)), false);
     assert.equal(options.length, 3);
   }
+});
+
+test("Old days' Tomatoes is limited to the final round", () => {
+  assert.equal(effectAllowedInRound("old-days-tomatoes", 4), false);
+  assert.equal(effectAllowedInRound("old-days-tomatoes", 5), true);
 });
 
 test("new persistent and late-game score battle effects apply their scoring rules", () => {
@@ -204,17 +212,17 @@ test("new persistent and late-game score battle effects apply their scoring rule
     tomatoCounts: { hitsTotal: 90, throwsTotal: 60 }
   });
   assert.equal(tempered.chips, 11);
-  assert.equal(tempered.score, 39.5);
+  assert.equal(tempered.score, 53);
 
   const fundamentals = scorePlay(high, null, { round: 4, persistentEffects: { returningFundamentals: true } });
-  assert.equal(fundamentals.chips, 26);
+  assert.equal(fundamentals.chips, 29);
   assert.equal(fundamentals.multiplier, 2.5);
-  assert.equal(fundamentals.score, 65);
+  assert.equal(fundamentals.score, 72);
 
   const sword = scorePlay(high, null, { round: 5, persistentEffects: { drawSword: true } });
   assert.equal(sword.chips, 26);
-  assert.equal(sword.multiplier, 3);
-  assert.equal(sword.score, 78);
+  assert.equal(sword.multiplier, 3.25);
+  assert.equal(sword.score, 84);
 
   const criticalExpected = scorePlay(high, null, { persistentEffects: { criticalHit: true }, criticalExpected: true });
   assert.equal(criticalExpected.chips, 15.125);
@@ -251,6 +259,26 @@ test("new persistent and late-game score battle effects apply their scoring rule
   assert.equal(danceProfile.chance, 0.25);
   assert.equal(danceProfile.multiplier, 1.75);
 
+  const dance = scorePlay(high, { kind: "dance-illusions" }, { persistentEffects: { danceIllusions: true } });
+  assert.equal(dance.chips, 16);
+  assert.equal(dance.multiplier, 2.5);
+  assert.equal(dance.score, 40);
+
+  const oldDays = scorePlay(high, { kind: "old-days-tomatoes", tomatoHits: 10 });
+  assert.equal(oldDays.chips, 16);
+  assert.equal(oldDays.score, 16);
+
+  const lord = scorePlay(high, null, { persistentEffects: { lordDominicksRegards: true } });
+  assert.equal(lord.multiplier, 6);
+  assert.equal(lord.score, 66);
+
+  const collector = scorePlay(high, { kind: "collector" }, { persistentEffects: { collector: true } });
+  assert.equal(collector.chips, 21);
+  assert.equal(collector.score, 21);
+
+  const newCriticalProfile = criticalProfileForEffects({ runaansHurricane: true, lordDominicksRegards: true, collector: true });
+  assert.equal(newCriticalProfile.chance, 0.75);
+
   const brutal = scorePlay(high, { kind: "brutal-force" });
   assert.equal(brutal.chips, 36);
   assert.equal(brutal.multiplier, 2);
@@ -274,8 +302,8 @@ test("new persistent and late-game score battle effects apply their scoring rule
     totalScoreBeforeRound: 250,
     highestTotalScoreBeforeRound: 500
   });
-  assert.equal(giant.scoreFactors[0].factor, 1.5);
-  assert.equal(giant.score, 16);
+  assert.equal(giant.scoreFactors[0].factor, 1.7);
+  assert.equal(giant.score, 18);
 });
 
 test("void seal owner gains chips and multiplier for the sealed suit", () => {
