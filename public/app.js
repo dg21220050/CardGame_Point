@@ -1649,7 +1649,7 @@ function battleEffectRuleText() {
 }
 
 function battleBalanceRuleText() {
-  return isZh() ? battleBalanceRuleTextZh() : battleBalanceRuleTextEn();
+  return battleCompleteRuleText();
   if (isZh()) {
     return [
       "\u5e7b\u5f71\u4e4b\u821e\uff1a\u66b4\u51fb\u7387 +25%\uff0c\u653b\u51fb\u901f\u5ea6 +65%\uff0c\u5e76\u8fdb\u5165\u5e7d\u7075\u72b6\u6001\uff1a\u5411\u8be5\u73a9\u5bb6\u6295\u63b7\u756a\u8304\u65f6\uff0c\u547d\u4e2d\u4e0d\u8ba1\u5165\u6295\u63b7\u8005\u7684\u6295\u63b7\u6b21\u6570\uff0c\u4f46\u4f1a\u8ba1\u5165\u8be5\u73a9\u5bb6\u88ab\u6295\u63b7\u7684\u6b21\u6570\u3002\u6bcf\u5c40\u4e00\u6b21\u3002",
@@ -1747,6 +1747,38 @@ function battleBalanceRuleText() {
     "Matthew effect: this round gains +2 multiplier. Later round wins grant 3 extra discard uses. Once per game.",
     "Bite me: at scoring time, add your remaining unused discard uses to this round's multiplier.",
     "Rambo: if you play within 15 seconds after your turn starts, gain +10 chips before multiplying."
+  ];
+}
+
+function battleCompleteRuleText() {
+  const baseRules = isZh()
+    ? [
+      "基础计分：高牌仅计最高牌；一对仅计对子；两对仅计两对；三条与四条仅计同点数牌；顺子、同花、葫芦、同花顺计全部五张。",
+      "踢脚牌：未参与牌型的牌按自身点数 40%（向下取整）加入点数，合计最高 20；这些点数也可触发暴击。",
+      "暴击：每张计分牌与有踢脚牌贡献的牌独立判定；仅当本回合暴击率大于 0% 且没有任何暴击时，最终得分额外 +100。",
+      "最终得分在完整计算后向下取整为整数。"
+    ]
+    : [
+      "Base scoring: High Card scores only its highest card; One Pair, Two Pair, Three/Four of a Kind score only their made cards; Straight, Flush, Full House, and Straight Flush score all five.",
+      "Kickers: cards outside the made hand add 40% of their chip value, rounded down, up to 20 total. Those contributions may crit.",
+      "Crits: scoring cards and contributing kickers roll independently. Only a round with crit chance above 0% and no crit adds +100 final score.",
+      "Final scores are floored to integers after the full calculation."
+    ];
+  return baseRules.concat(battleRuleEffectSamples().map((effect) => `${battleEffectName(effect)}: ${battleEffectDescription(effect)}`));
+}
+
+function battleRuleEffectSamples() {
+  return [
+    { kind: "suit-chip", suit: "H" }, { kind: "rank-chip", rank: "A" }, { kind: "pair-mult" }, { kind: "flush-mult" }, { kind: "red-chip" },
+    { kind: "void-suit", suit: "H", amount: 3 }, { kind: "pattern-reproduction" }, { kind: "shadow-swap" }, { kind: "void-erosion", followingUnplayedPlayers: 2 },
+    { kind: "world-mirror" }, { kind: "man-mirror" }, { kind: "draven" }, { kind: "goelia" }, { kind: "shadow-targeting", gainedChipBonus: 0 },
+    { kind: "chaos-dice", rerolledCardCount: 0 }, { kind: "rambo", amount: 10, seconds: 20 }, { kind: "tomato-king", tomatoHits: 0 },
+    { kind: "tomato-shooter", tomatoThrows: 0 }, { kind: "runaans-hurricane" }, { kind: "old-days-tomatoes", tomatoThrows: 0 },
+    { kind: "lord-dominicks-regards" }, { kind: "collector" }, { kind: "bite-me", discardMultiplier: 0 }, { kind: "straight-flush-boost" },
+    { kind: "change-straight" }, { kind: "protoceratops" }, { kind: "bread-butter" }, { kind: "bread-cheese" }, { kind: "bread-jam" },
+    { kind: "astral-body" }, { kind: "tempered-tomato" }, { kind: "returning-fundamentals" }, { kind: "draw-sword" },
+    { kind: "critical-hit" }, { kind: "infinity-edge" }, { kind: "brutal-force" }, { kind: "vigorous" }, { kind: "refresher-orb" },
+    { kind: "giant-killer" }, { kind: "matthew-effect" }, { kind: "critical-switch-hand" }, { kind: "dance-illusions" }
   ];
 }
 

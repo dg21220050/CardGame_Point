@@ -490,10 +490,12 @@ function scorePlay(cards, effect, context = {}) {
     addScoreBonus(effect.kind, Math.min(200, 100 + scoreBeforeBonuses * 0.25));
   }
   const critEligibleCardCount = cardValues.filter((entry) => entry.scoresHand || entry.kickerChips > 0).length;
-  if (useCriticalExpectedValue) {
-    addScoreBonus("no-critical-hit", 100 * Math.pow(1 - criticalProfile.chance, critEligibleCardCount));
-  } else if (!criticalTriggered) {
-    addScoreBonus("no-critical-hit", 100);
+  if (criticalProfile.chance > 0) {
+    if (useCriticalExpectedValue) {
+      addScoreBonus("no-critical-hit", 100 * Math.pow(1 - criticalProfile.chance, critEligibleCardCount));
+    } else if (!criticalTriggered) {
+      addScoreBonus("no-critical-hit", 100);
+    }
   }
   const rawScore = (scoreBeforeBonuses + flatScoreBonus) * finalScoreFactor;
   const score = Math.min(1000000, Math.max(0, Math.floor(rawScore)));
