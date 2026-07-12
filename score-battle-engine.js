@@ -130,11 +130,11 @@ function scoringIndexesForHand(cards, handId, rankCounts) {
 function createEffectOptions(options = {}) {
   const excludedKinds = new Set(Array.isArray(options.excludedKinds) ? options.excludedKinds : []);
   const effectPool = [
-    () => ({ kind: "suit-chip", suit: randomItem(SUITS), amount: 4 }),
-    () => ({ kind: "rank-chip", rank: randomItem(RANKS), amount: 7 }),
-    () => ({ kind: "pair-mult", amount: 2 }),
-    () => ({ kind: "flush-mult", amount: 1.5 }),
-    () => ({ kind: "red-chip", amount: 3 }),
+    () => ({ kind: "suit-chip", suit: randomItem(SUITS) }),
+    () => ({ kind: "rank-chip" }),
+    () => ({ kind: "pair-mult" }),
+    () => ({ kind: "flush-mult" }),
+    () => ({ kind: "red-chip" }),
     () => ({ kind: "void-suit", suit: randomItem(SUITS), amount: 3 }),
     () => ({ kind: "pattern-reproduction" }),
     () => ({ kind: "shadow-swap" }),
@@ -145,7 +145,7 @@ function createEffectOptions(options = {}) {
     () => ({ kind: "goelia" }),
     () => ({ kind: "shadow-targeting" }),
     () => ({ kind: "chaos-dice" }),
-    () => ({ kind: "rambo", amount: 10, seconds: 15 }),
+    () => ({ kind: "rambo", amount: 10, seconds: 20 }),
     () => ({ kind: "tomato-king" }),
     () => ({ kind: "tomato-shooter" }),
     () => ({ kind: "runaans-hurricane" }),
@@ -194,6 +194,7 @@ function effectAllowedInRound(kind, round) {
     return numericRound >= 2 && numericRound <= 3;
   }
   if (kind === "old-days-tomatoes") return numericRound === 5;
+  if (kind === "astral-body") return numericRound < 5;
   return true;
 }
 
@@ -221,6 +222,10 @@ function scorePlay(cards, effect, context = {}) {
   let voidOwnerSuitApplied = false;
   let flatScoreBonus = 0;
   let scoreFactor = 1;
+  let finalScoreFactor = 1;
+  let kickerChipsUsed = 0;
+  let criticalTriggered = false;
+  const finalScoreFactors = [];
 
   function addMultiplierBonus(kind, amount) {
     if (!amount) return;
@@ -257,24 +262,25 @@ function scorePlay(cards, effect, context = {}) {
     scoreFactors.push({ kind, factor });
   }
 
+  function addFinalScoreFactor(kind, factor) {
+    if (!factor || factor === 1) return;
+    finalScoreFactor *= factor;
+    finalScoreFactors.push({ kind, factor });
+  }
+
   for (let cardIndex = 0; cardIndex < cards.length; cardIndex += 1) {
     const card = cards[cardIndex];
     const scoresHand = scoringIndexes.has(cardIndex);
     const printedChips = chipValue(card);
-    const baseChips = scoresHand ? printedChips : 0;
+    const kickerChips = scoresHand ? 0 : Math.min(Math.max(0, 20 - kickerChipsUsed), Math.floor(printedChips * 0.4));
+    if (!scoresHand) kickerChipsUsed += kickerChips;
+    const baseChips = scoresHand ? printedChips : kickerChips;
     let finalChips = baseChips;
     const bonuses = [];
-    if (effect?.kind === "suit-chip" && card.suit === effect.suit) {
-      finalChips += effect.amount;
-      bonuses.push({ kind: effect.kind, amount: effect.amount });
-    }
-    if (effect?.kind === "rank-chip" && rankSymbol(card) === effect.rank) {
-      finalChips += effect.amount;
-      bonuses.push({ kind: effect.kind, amount: effect.amount });
-    }
-    if (effect?.kind === "red-chip" && (card.suit === "H" || card.suit === "D")) {
-      finalChips += effect.amount;
-      bonuses.push({ kind: effect.kind, amount: effect.amount });
+    if (effect?.kind === "red-chip") {
+      const amount = card.suit === "H" || card.suit === "D" ? 4 : 2;
+      finalChips += amount;
+      bonuses.push({ kind: effect.kind, amount });
     }
     for (const roundEffect of roundEffects) {
       if (roundEffect.kind === "void-suit" && card.suit === roundEffect.suit) {
@@ -292,11 +298,12 @@ function scorePlay(cards, effect, context = {}) {
         }
       }
     }
-    if (scoresHand && criticalProfile.chance > 0) {
+    if ((scoresHand || kickerChips > 0) && criticalProfile.chance > 0) {
       const criticalMultiplier = criticalMultiplierForCard(cardIndex, criticalProfile, criticalRolls, useCriticalExpectedValue);
       if (criticalMultiplier > 1) {
         const beforeCritical = finalChips;
         finalChips *= criticalMultiplier;
+        if (criticalRolls[cardIndex] === true) criticalTriggered = true;
         bonuses.push({
           kind: "critical-hit",
           amount: finalChips - beforeCritical,
@@ -314,16 +321,29 @@ function scorePlay(cards, effect, context = {}) {
       scoresHand,
       printedChips,
       baseChips,
+      kickerChips,
       bonuses,
       finalChips
     });
   }
 
-  if (effect?.kind === "pair-mult" && ["one-pair", "two-pair"].includes(hand.id)) {
-    addMultiplierBonus(effect.kind, effect.amount);
+  if (effect?.kind === "suit-chip") {
+    const matches = cards.filter((card) => card.suit === effect.suit).length;
+    addGlobalChipBonus(effect.kind, Math.min(20, Math.max(8, matches * 4)));
+    addMultiplierBonus(effect.kind, 1);
   }
-  if (effect?.kind === "flush-mult" && ["flush", "straight-flush"].includes(hand.id)) {
-    addMultiplierBonus(effect.kind, effect.amount);
+  if (effect?.kind === "rank-chip") {
+    const matches = cards.filter((card) => rankSymbol(card) === effect.rank).length;
+    addGlobalChipBonus(effect.kind, Math.min(24, Math.max(10, matches * 6)));
+  }
+  if (effect?.kind === "pair-mult") {
+    const pairCount = countPairRanks(cards);
+    addGlobalChipBonus(effect.kind, Math.max(8, pairCount * 8));
+    if (["one-pair", "two-pair"].includes(hand.id)) addMultiplierBonus(effect.kind, 2);
+  }
+  if (effect?.kind === "flush-mult") {
+    addGlobalChipBonus(effect.kind, 7);
+    if (["flush", "straight-flush"].includes(hand.id)) addMultiplierBonus(effect.kind, 1.5);
   }
   if (voidOwnerSuitApplied) {
     addMultiplierBonus("void-suit", 1);
@@ -337,38 +357,48 @@ function scorePlay(cards, effect, context = {}) {
   if (effect?.kind === "straight-flush-boost" && hand.id === "straight-flush") {
     addScoreBonus(effect.kind, 1000);
   }
-  if (["shadow-swap", "void-erosion"].includes(effect?.kind)) {
+  if (effect?.kind === "shadow-swap") {
     addGlobalChipBonus(effect.kind, 5);
     addMultiplierBonus(effect.kind, 1);
+  }
+  if (effect?.kind === "void-erosion") {
+    const followingUnplayedPlayers = Math.max(0, Number(effect.followingUnplayedPlayers) || 0);
+    addGlobalChipBonus(effect.kind, 5);
+    addMultiplierBonus(effect.kind, 1);
+    addMultiplierBonus(effect.kind, Math.max(1, followingUnplayedPlayers));
+    addScoreBonus(effect.kind, followingUnplayedPlayers * 70);
   }
   if (["world-mirror", "man-mirror"].includes(effect?.kind)) {
     addGlobalChipBonus(effect.kind, 6);
     addMultiplierBonus(effect.kind, 2);
   }
   if (effect?.kind === "shadow-targeting") {
-    addGlobalChipBonus(effect.kind, Number(effect.gainedChipBonus) || 0);
-    addMultiplierBonus(effect.kind, 1);
+    addScoreBonus(effect.kind, Math.max(0, Number(effect.gainedChipBonus) || 0) * 10);
+    addMultiplierBonus(effect.kind, 2);
   }
   if (effect?.kind === "chaos-dice") {
-    addGlobalChipBonus(effect.kind, Math.max(0, Number(effect.rerolledCardCount) || 0) * 0.5);
+    const rerolledCardCount = Math.max(0, Number(effect.rerolledCardCount) || 0);
+    addGlobalChipBonus(effect.kind, 10 + rerolledCardCount * 0.5);
     addMultiplierBonus(effect.kind, 1);
+    addScoreBonus(effect.kind, rerolledCardCount * 10);
   }
   if (effect?.kind === "draven") {
     addMultiplierBonus(effect.kind, 3.5);
   }
-  if (effect?.kind === "rambo" && Number(context.turnElapsedMs) <= (effect.seconds || 15) * 1000) {
+  if (effect?.kind === "rambo" && Number(context.turnElapsedMs) <= (effect.seconds || 20) * 1000) {
     addGlobalChipBonus(effect.kind, effect.amount || 10);
+    addScoreBonus(effect.kind, 150);
   }
   if (effect?.kind === "tomato-king") {
-    addScoreBonus(effect.kind, Math.round((Number(effect.tomatoHits) || 0) * 2 * 10) / 10);
+    addScoreBonus(effect.kind, Math.max(0, Number(effect.tomatoHits) || 0) * 5);
     addMultiplierBonus(effect.kind, 1);
   }
   if (effect?.kind === "tomato-shooter") {
-    addScoreBonus(effect.kind, Math.round((Number(effect.tomatoThrows) || 0) * 2 * 10) / 10);
+    addScoreBonus(effect.kind, Math.max(0, Number(effect.tomatoThrows) || 0) * 5);
     addMultiplierBonus(effect.kind, 1);
   }
   if (effect?.kind === "old-days-tomatoes") {
-    addGlobalChipBonus(effect.kind, Math.max(0, Number(effect.tomatoHits) || 0) * 0.5);
+    addGlobalChipBonus(effect.kind, Math.max(0, Number(effect.tomatoThrows) || 0) * 0.5);
   }
   if (effect?.kind === "dance-illusions") {
     addGlobalChipBonus(effect.kind, 5);
@@ -388,7 +418,7 @@ function scorePlay(cards, effect, context = {}) {
     addMultiplierBonus(effect.kind, 1);
   }
   if (effect?.kind === "vigorous") {
-    addChipFactor(effect.kind, 1.5);
+    // The final-score bonus is added after the hand's normal score is known below.
   }
   if (effect?.kind === "refresher-orb") {
     addMultiplierBonus(effect.kind, 1);
@@ -399,23 +429,32 @@ function scorePlay(cards, effect, context = {}) {
   if (effect?.kind === "astral-body") {
     addScoreBonus(effect.kind, 1000);
   }
-  if (persistentEffects.breadButter && hand.id === "two-pair") {
-    addGlobalChipBonus("bread-butter", 5);
-    addMultiplierBonus("bread-butter", 2);
+  if (persistentEffects.breadButter) {
+    addGlobalChipBonus("bread-butter", 4);
+    if (["one-pair", "two-pair"].includes(hand.id)) {
+      addGlobalChipBonus("bread-butter", 5);
+      addMultiplierBonus("bread-butter", 2);
+    }
   }
-  if (persistentEffects.breadCheese && hand.id === "three-kind") {
-    addGlobalChipBonus("bread-cheese", 12);
-    addMultiplierBonus("bread-cheese", 1);
+  if (persistentEffects.breadCheese) {
+    addGlobalChipBonus("bread-cheese", 5);
+    if (["three-kind", "full-house", "four-kind"].includes(hand.id)) {
+      addGlobalChipBonus("bread-cheese", 7);
+      addMultiplierBonus("bread-cheese", 1);
+    }
   }
-  if (persistentEffects.breadJam && hand.id === "straight") {
-    addGlobalChipBonus("bread-jam", 3);
-    addMultiplierBonus("bread-jam", 2);
+  if (persistentEffects.breadJam) {
+    addGlobalChipBonus("bread-jam", 4);
+    if (hand.id === "straight") {
+      addGlobalChipBonus("bread-jam", 5);
+      addMultiplierBonus("bread-jam", 2);
+    }
   }
   if (persistentEffects.temperedTomato) {
     const hits = Math.max(0, Number(tomatoCounts.hitsTotal) || 0);
     const throws = Math.max(0, Number(tomatoCounts.throwsTotal) || 0);
     if (hits > 30 || throws > 50) {
-      addScoreBonus("tempered-tomato", Math.round((hits * 0.5 + throws * 0.2) * 0.75 * 10) / 10);
+      addScoreBonus("tempered-tomato", (hits * 0.5 + throws * 0.2) * 5);
     }
   }
   if (persistentEffects.returningFundamentals) {
@@ -432,7 +471,7 @@ function scorePlay(cards, effect, context = {}) {
     addMultiplierBonus("lord-dominicks-regards", Math.max(0, 6 - hand.multiplier));
   }
   if (persistentEffects.astralBody) {
-    addScoreFactor("astral-body-penalty", 0.5);
+    addFinalScoreFactor("astral-body-penalty", astralBodyScoreFactor(round));
   }
   if (persistentEffects.giantKiller) {
     addScoreFactor("giant-killer", giantKillerScoreFactor(context));
@@ -447,7 +486,16 @@ function scorePlay(cards, effect, context = {}) {
   let multiplier = additiveMultiplierTotal;
   for (const entry of multiplierFactors) multiplier *= entry.factor;
   const scoreBeforeBonuses = chips * multiplier * scoreFactor;
-  const rawScore = scoreBeforeBonuses + flatScoreBonus;
+  if (effect?.kind === "vigorous") {
+    addScoreBonus(effect.kind, Math.min(200, 100 + scoreBeforeBonuses * 0.25));
+  }
+  const critEligibleCardCount = cardValues.filter((entry) => entry.scoresHand || entry.kickerChips > 0).length;
+  if (useCriticalExpectedValue) {
+    addScoreBonus("no-critical-hit", 100 * Math.pow(1 - criticalProfile.chance, critEligibleCardCount));
+  } else if (!criticalTriggered) {
+    addScoreBonus("no-critical-hit", 100);
+  }
+  const rawScore = (scoreBeforeBonuses + flatScoreBonus) * finalScoreFactor;
   const score = Math.min(1000000, Math.max(0, Math.floor(rawScore)));
 
   return {
@@ -466,8 +514,24 @@ function scorePlay(cards, effect, context = {}) {
     globalChipBonuses,
     multiplierBonuses,
     scoreBonuses,
-    scoreFactors
+    scoreFactors,
+    finalScoreFactors,
+    criticalTriggered,
+    kickerChips: kickerChipsUsed
   };
+}
+
+function countPairRanks(cards) {
+  const counts = new Map();
+  for (const card of cards) counts.set(card.rank, (counts.get(card.rank) || 0) + 1);
+  return Array.from(counts.values()).filter((count) => count === 2).length;
+}
+
+function astralBodyScoreFactor(round) {
+  const numericRound = Number(round) || 0;
+  if (numericRound <= 2) return 0.7;
+  if (numericRound === 3) return 0.6;
+  return 0.5;
 }
 
 function roundScaling(round, chipValues, multiplierValues) {

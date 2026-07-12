@@ -2301,7 +2301,7 @@ function scoreEffectForSeat(table, seat) {
     effect.tomatoThrows = counts.throwsBeforeRound;
   }
   if (effect.kind === "old-days-tomatoes") {
-    effect.tomatoHits = counts.hitsBeforeRound;
+    effect.tomatoThrows = counts.throwsBeforeRound;
   }
   if (effect.kind === "bite-me") {
     effect.discardMultiplier = Math.max(0, Number(seat.discardUsesLeft) || 0);
@@ -2383,6 +2383,12 @@ function countScoreTomatoHits(table, seat, seatField, beforeRoundOnly) {
 function applyScoreEffect(table, seat, effect, payload) {
   const cardCodes = normalizeScoreCardCodes(payload.targetCardCodes);
   seat.persistentEffects = seat.persistentEffects || {};
+  if (effect.kind === "rank-chip") {
+    if (cardCodes.length !== 1) return { ok: false, error: "Choose one hand or community card for Rank Boost." };
+    const selected = findScoreHandCard(seat, cardCodes[0]) || findScoreCommunityCard(table, cardCodes[0]);
+    if (!selected) return { ok: false, error: "Choose a card currently in your hand or the community board." };
+    return { ok: true, effect: { ...effect, rank: scoreBattle.rankSymbol(selected.card) } };
+  }
   if (effect.kind === "void-suit") {
     table.roundEffects.push({
       kind: "void-suit",
@@ -2423,8 +2429,9 @@ function applyScoreEffect(table, seat, effect, payload) {
     table.burnedCards.push(community.card);
     const [replacement] = drawScoreCommunityCards(table, 1);
     table.community[community.index] = replacement;
+    const followingUnplayedPlayers = countFollowingUnplayedScoreSeats(table, seat);
     table.messages.unshift(`${seat.displayName} eroded a community card.`);
-    return { ok: true, effect: { ...effect, targetCodes: cardCodes } };
+    return { ok: true, effect: { ...effect, targetCodes: cardCodes, followingUnplayedPlayers } };
   }
   if (effect.kind === "world-mirror") {
     for (const card of table.community) mirrorScoreCard(card);
@@ -2469,7 +2476,7 @@ function applyScoreEffect(table, seat, effect, payload) {
       activeSeat.hand.push(...drawScoreCards(table, activeSeat, count));
     }
     table.messages.unshift(`${seat.displayName} rerolled ${rerolledCardCount} unplayed hand cards.`);
-    return { ok: true, effect: { ...effect, rerolledCardCount, chaosChipBonus: rerolledCardCount * 0.5 } };
+    return { ok: true, effect: { ...effect, rerolledCardCount, chaosChipBonus: 10 + rerolledCardCount * 0.5, chaosScoreBonus: rerolledCardCount * 10 } };
   }
   if (effect.kind === "protoceratops") {
     seat.persistentEffects.protoceratops = true;
@@ -2562,6 +2569,19 @@ function scoreTurnOrderSeatIds(table) {
   if (!active.length) return [];
   const startIndex = ((table.gameNumber - 1) + (table.round - 1)) % active.length;
   return active.slice(startIndex).concat(active.slice(0, startIndex)).map((seat) => seat.seatId);
+}
+
+function countFollowingUnplayedScoreSeats(table, seat) {
+  const active = activeScoreSeats(table);
+  const orderedIds = (table.turnOrderSeatIds || []).filter((seatId) => active.some((entry) => entry.seatId === seatId));
+  const order = orderedIds.length ? orderedIds : active.map((entry) => entry.seatId);
+  const currentIndex = order.indexOf(seat.seatId);
+  if (currentIndex < 0) return 0;
+  return order
+    .slice(currentIndex + 1)
+    .map((seatId) => active.find((entry) => entry.seatId === seatId))
+    .filter((entry) => entry && !entry.submitted)
+    .length;
 }
 
 function currentScoreTurnSeat(table) {
@@ -2745,6 +2765,7 @@ function scoreResultForClient(table, seat, cards, result, automatic, scoringEffe
     multiplierBonuses: result.multiplierBonuses,
     scoreBonuses: result.scoreBonuses || [],
     scoreFactors: result.scoreFactors || [],
+    finalScoreFactors: result.finalScoreFactors || [],
     effect: scoringEffect,
     postRoundBonuses: [],
     automatic: Boolean(automatic)
@@ -2892,11 +2913,27 @@ function scoreBotEffectPriority(effect) {
 }
 
 function scoreBotEffectPayload(table, seat, effect) {
+  if (effect.kind === "rank-chip") return scoreBotRankBoostPayload(table, seat);
   if (effect.kind === "pattern-reproduction") return scoreBotPatternPayload(table, seat, effect);
   if (effect.kind === "shadow-swap") return scoreBotShadowSwapPayload(table, seat, effect);
   if (effect.kind === "void-erosion") return scoreBotVoidErosionPayload(table);
   if (effect.kind === "shadow-targeting") return scoreBotShadowTargetPayload(table, seat);
   return { ok: true, payload: {} };
+}
+
+function scoreBotRankBoostPayload(table, seat) {
+  const available = seat.hand.concat(table.community || []);
+  if (!available.length) return { ok: false };
+  const rankCounts = new Map();
+  for (const card of available) {
+    const rank = scoreBattle.rankSymbol(card);
+    rankCounts.set(rank, (rankCounts.get(rank) || 0) + 1);
+  }
+  const chosen = available.slice().sort((left, right) => (
+    (rankCounts.get(scoreBattle.rankSymbol(right)) || 0) - (rankCounts.get(scoreBattle.rankSymbol(left)) || 0) ||
+    scoreCardChipValue(right) - scoreCardChipValue(left)
+  ))[0];
+  return chosen ? { ok: true, payload: { targetCardCodes: [chosen.code] } } : { ok: false };
 }
 
 function scoreBotPatternPayload(table, seat, effect) {
@@ -3358,6 +3395,7 @@ function scoreSeatForClient(table, seat, youSeat) {
     globalChipBonuses: seat.lastResult.globalChipBonuses || [],
     scoreBonuses: seat.lastResult.scoreBonuses || [],
     scoreFactors: seat.lastResult.scoreFactors || [],
+    finalScoreFactors: seat.lastResult.finalScoreFactors || [],
     postRoundBonuses: seat.lastResult.postRoundBonuses || [],
     cards: (seat.lastResult.cards || []).map((entry) => ({
       ...entry,

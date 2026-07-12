@@ -1386,12 +1386,13 @@ function renderScoreCalcCardValue(value = {}) {
   const bonusText = otherBonus === 0 ? "" : ` ${otherBonus > 0 ? "+" : "-"} ${formatCompactNumber(Math.abs(otherBonus))}`;
   const beforeCritical = (Number(value.finalChips) || 0) - Number(criticalBonus?.amount || 0);
   const subtotal = formatCompactNumber(beforeCritical);
-  const detail = value.scoresHand === false
-    ? `${t("Base chips")} 0${bonusText} = ${subtotal}`
-    : `${t("Base chips")} ${formatCompactNumber(value.baseChips ?? 0)}${bonusText} = ${subtotal}`;
+  const detail = `${t("Base chips")} ${formatCompactNumber(value.baseChips ?? 0)}${bonusText} = ${subtotal}`;
+  const kickerText = value.scoresHand === false
+    ? (isZh() ? "踢脚牌贡献（点数 40%）" : "Kicker contribution (40%)")
+    : "";
   return el("div", { className: "score-calc-card-notes" }, [
     el("span", { className: "score-calc-card-chip" }, [detail]),
-    value.scoresHand === false ? el("span", { className: "score-calc-card-chip is-muted" }, [t("Not part of scoring hand")]) : "",
+    kickerText ? el("span", { className: "score-calc-card-chip is-muted" }, [kickerText]) : "",
     criticalBonus ? el("span", { className: `score-calc-card-chip ${criticalBonus.critical ? "is-crit" : "is-expected-crit"}` }, [
       `${t(criticalBonus.critical ? "Crit bonus" : "Expected crit")} +${formatCompactNumber(criticalBonus.amount)}`
     ]) : ""
@@ -1407,7 +1408,7 @@ function buildBattleScoreOverlay() {
     const value = valueByCode.get(card.code) || {};
     const bonus = (value.bonuses || []).reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
     const bonusText = bonus === 0 ? "" : ` ${bonus > 0 ? "+" : "-"} ${Math.abs(bonus)}`;
-    const scoringText = value.scoresHand === false ? ` (${t("Not part of scoring hand")})` : "";
+    const scoringText = value.scoresHand === false ? (isZh() ? "（踢脚牌贡献 40%）" : " (Kicker contribution 40%)") : "";
     return el("li", { className: "calc-step", style: `--step-index: ${index}` }, [
       el("span", {}, [card.displayCode || value.displayCode || card.code]),
       el("span", {}, [`${t("Base chips")} ${value.baseChips ?? 0}${bonusText} = ${value.finalChips ?? 0}${scoringText}`])
@@ -1428,12 +1429,18 @@ function buildBattleScoreOverlay() {
   const scoreFactorText = (result.scoreFactors || []).length
     ? ` x ${(result.scoreFactors || []).map((entry) => entry.factor).join(" x ")}`
     : "";
+  const finalScoreFactorText = (result.finalScoreFactors || []).length
+    ? ` x ${(result.finalScoreFactors || []).map((entry) => entry.factor).join(" x ")}`
+    : "";
   const chipFactorText = (result.chipFactors || []).length
     ? `${result.chipTotalBeforeFactors ?? result.chips} x ${(result.chipFactors || []).map((entry) => entry.factor).join(" x ")} = ${result.chips}`
     : `${result.chips}`;
-  const scoreFormula = scoreBonusTotal || scoreFactorText
+  const scoreFormulaBeforeFinalFactors = scoreBonusTotal || scoreFactorText
     ? `${result.chips} x ${result.multiplier}${scoreFactorText}${scoreBonusTotal ? ` + ${scoreBonusTotal}` : ""} = ${result.score}`
     : `${result.chips} x ${result.multiplier} = ${result.score}`;
+  const scoreFormula = finalScoreFactorText
+    ? `(${result.chips} x ${result.multiplier}${scoreFactorText}${scoreBonusTotal ? ` + ${scoreBonusTotal}` : ""})${finalScoreFactorText} = ${result.score}`
+    : scoreFormulaBeforeFinalFactors;
 
   return el("div", { className: "score-calc-backdrop", role: "presentation" }, [
     el("section", { className: "score-calc-modal", role: "dialog", "aria-modal": "true", "aria-labelledby": "score-calc-title" }, [
@@ -1464,6 +1471,7 @@ function buildBattleScoreOverlay() {
         ...(result.postRoundBonuses || []).map((bonus) => el("span", {}, [`${battleEffectName({ kind: bonus.kind })}: +${bonus.amount}`])),
         el("span", {}, [`${t("Hand multiplier")}: ${translateBattleHand(result.handName)} x ${multiplierText}`]),
         ...(result.scoreFactors || []).map((factor) => el("span", {}, [`${battleEffectName({ kind: factor.kind })}: x${factor.factor}`])),
+        ...(result.finalScoreFactors || []).map((factor) => el("span", {}, [`${battleEffectName({ kind: factor.kind })}: x${factor.factor} ${t("Final score")}`])),
         el("strong", {}, [`${t("Final score")}: ${scoreFormula}`])
       ])
     ])
@@ -1565,30 +1573,30 @@ function battleEffectRuleText() {
       "红色增幅：已出的红桃和方块每张 +3 点。",
       "对子引擎：只有牌型为一对或两对时，倍率 +2。",
       "同花引擎：只有牌型为同花或同花顺时，倍率 +1.5。",
-      "虚无封印：从选择者开始，本回合之后出牌玩家的指定花色点数 -3，最低降到 0；选择者本人打出该花色牌不扣点数，改为每张 +4 点，且只要打出的 5 张牌中包含该花色，倍率 +1。",
-      "花色复制：按顺序选择两张自己的手牌，第一张手牌复制为第二张手牌的花色；本回合倍率 +2.5。",
-      "暗隐置换：选择一张自己的手牌与一张公共牌交换；本回合总点数 +5，倍率 +1。",
-      "虚空侵蚀：选择并重发一张公共牌；本回合总点数 +5，倍率 +1。",
-      "镜中世界：将 5 张公共牌全部变成点数互补的牌，A/K 互换，Q/2、J/3、10/4、9/5、8/6 互换，7 不变；本回合总点数 +6，倍率 +2。",
+      "虚无封印：从选择者开始，本回合之后顺序出牌玩家的指定花色点数 -3，最低降到 0；选择者本人打出的该花色牌不扣点，改为每张 +4 点，且只要打出的 5 张牌中包含该花色，倍率 +1。",
+      "花色复制：按顺序选择两张自己的手牌，第一张手牌复制第二张手牌的花色；本回合倍率 +2.5。",
+      "暗隐置换：选择一张自己的手牌与一张公共牌交换，交换后的公共牌会影响本回合之后顺序出牌的玩家；本回合总点数 +5，倍率 +1。",
+      "虚空侵蚀：选择并移除一张公共牌，然后从牌库补发一张新的公共牌，新的公共牌会影响之后顺序出牌的玩家；本回合总点数 +5，倍率 +1。",
+      "镜中世界：将 5 张公共牌全部变成点数互补的牌，A/K 互换，Q/2、J/3、10/4、9/5、8/6 互换，7 不变；变化后的公共牌会影响之后顺序出牌的玩家；本回合总点数 +6，倍率 +2。",
       "镜中人：将自己的全部手牌变成点数互补的牌，互补规则与镜中世界相同；本回合总点数 +6，倍率 +2。",
       "德莱联盟：本回合倍率 +3.5；若该玩家在本回合得分最高，回合结算后额外获得当前所有玩家中最高总分的 20%。",
       "歌莉娅：将自己的手牌在不改变花色的前提下，变为 8、9、10、J、Q、K 中不完全相同的点数。",
       "虚空索敌：选择自己的两张手牌，并指定一名本回合尚未出牌的玩家，与其随机两张手牌交换；本回合倍率 +1，且总点数额外加上换得两张手牌的点数和。",
       "混沌骰子：将本回合尚未出牌的所有玩家，包括自己在内，手牌全部随机重发；选择者本回合倍率 +1，且总点数额外加上本次所有被重发手牌总数 x0.5。",
-      "番茄大王：倍率 +1；计算该玩家在本局内、本回合之前被其他玩家投掷番茄命中的总次数；本回合总分额外加上该次数×5。",
-      "番茄射手：倍率 +1；计算该玩家在本局内、本回合之前向其他玩家投掷番茄的总次数；本回合总分额外加上该次数×5。",
+      "番茄大王：本回合手牌按正常牌型倍率结算后，再在最终分额外加上本局此前被其他玩家投掷番茄命中的次数 ×1.5；本回合倍率 +1。每位玩家每局只能选择一次。",
+      "番茄射手：本回合手牌按正常牌型倍率结算后，再在最终分额外加上本局此前向其他玩家投掷番茄的次数 ×1.5；本回合倍率 +1。每位玩家每局只能选择一次。",
       "同花大顺：当玩家打出同花顺时，最终分额外 +1000。",
       "质变：顺子：选择后若打出的牌型为顺子，该手牌按同花顺倍率计算。每位玩家每局只能选择一次。",
       "叠角龙：选择该特效的玩家本回合倍率 +3；本局内该玩家被番茄击中和向别人投掷番茄的有效计数变为 3 倍，包括选择前已有计数。每位玩家每局只能选择一次。",
-      "面包和黄油：从本回合开始，该玩家所有顺子牌型倍率 +2，基础点数+3。",
-      "面包和奶酪：从本回合开始，该玩家所有三条牌型倍率 +1，基础点数+12。",
-      "面包和果酱：从本回合开始，该玩家所有两对牌型倍率 +2，基础点数+5。",
-      "星界躯体：本回合最终分额外 +1000；但从本回合开始，本局之后每回合最终得分降低至 50% 。每位玩家每局只能选择一次。",
-      "钢化番茄：从本回合开始算起，该玩家任意回合有效番茄命中次数超过 30 或有效投掷次数超过 50 时，每回合总分额外加入（命中次数 x0.5 + 投掷次数 x0.2）×5。每位玩家每局只能选择一次。",
-      "回归基本功：只会在第 2/3 回合出现；从本回合开始，本局之后不能再选择任何特效；第 2/3/4/5 回合分别获得 +12/+15/+15/+18 点数和 +1.25/+1.5/+1.5/+1.75 倍率。每位玩家每局只能选择一次。",
-      "亮出你的剑：只会在第 2/3 回合出现；从本回合开始，本局之后不能再弃牌；第 2/3/4/5 回合分别获得 +12/+12/+12/+15 点数和 +1.5/+1.75/+1.75/+2 倍率。每位玩家每局只能选择一次。若之后选择刷新球，则重新允许弃牌但保留亮剑加成。",
-      "关键暴击：从本回合开始，暴击率 +50%。暴击牌在点数计算时乘以 1.75。预估分使用期望值显示，正式结算会逐牌随机。每位玩家每局只能选择一次。",
-      "无尽之刃：从本回合开始，暴击率 +25%，并将暴击倍率提高到 2.25。每位玩家每局只能选择一次。",
+      "面包和黄油：从本回合开始，本局之后所有顺子牌型倍率 +2。每位玩家每局只能选择一次。",
+      "面包和奶酪：从本回合开始，本局之后所有三条牌型倍率 +3。每位玩家每局只能选择一次。",
+      "面包和果酱：从本回合开始，本局之后所有两对牌型倍率 +4。每位玩家每局只能选择一次。",
+      "星界躯体：本回合最终分额外 +1000；但从本回合开始，本局之后每回合最终得分降低至 50% 并取整数。每位玩家每局只能选择一次。",
+      "钢化番茄：从本回合开始持续判定；有效番茄命中次数超过 30 或有效投掷次数超过 50 后，每回合在手牌结算后额外加入（命中次数 ×0.5 + 投掷次数 ×0.2）×0.5，并保留一位小数。每位玩家每局只能选择一次。",
+      "回归基本功：只会在第 2/3 回合出现；从本回合开始，本局之后不能再选择任何特效；第 2/3/4/5 回合分别获得 +15/+20/+20/+22 点数和 +1/+1.5/+1.5/+1.75 倍率。每位玩家每局只能选择一次。",
+      "亮出你的剑：只会在第 2/3 回合出现；从本回合开始，本局之后不能再弃牌；第 2/3/4/5 回合分别获得 +10/+15/+15/+18 点数和 +2/+2.5/+2.5/+2.75 倍率。每位玩家每局只能选择一次。若之后选择刷新球，则重新允许弃牌但保留亮剑加成。",
+      "关键暴击：从本回合开始，本局之后所有回合，每张打出的牌各有 50% 几率暴击；暴击牌在点数计算时乘以 1.75。预估分使用期望值显示，正式结算会逐牌随机。",
+      "无尽之刃：从本回合开始，本局之后所有回合暴击率 +25%，并将暴击倍率提高到 2.25。暴击率与其他暴击特效加算，超过 100% 按 100% 计算。每位玩家每局只能选择一次。",
       "残暴之力：本回合总点数 +25，倍率 +1。",
       "大力：本回合计分点数之和 x1.5 后再乘以牌型倍率。",
       "刷新球：本回合倍率 +1，且本局额外获得 4 次弃牌机会；若此前被亮出你的剑禁止弃牌，则重新允许弃牌，且不取消亮剑的点数和倍率加成。",
@@ -1641,6 +1649,7 @@ function battleEffectRuleText() {
 }
 
 function battleBalanceRuleText() {
+  return isZh() ? battleBalanceRuleTextZh() : battleBalanceRuleTextEn();
   if (isZh()) {
     return [
       "\u5e7b\u5f71\u4e4b\u821e\uff1a\u66b4\u51fb\u7387 +25%\uff0c\u653b\u51fb\u901f\u5ea6 +65%\uff0c\u5e76\u8fdb\u5165\u5e7d\u7075\u72b6\u6001\uff1a\u5411\u8be5\u73a9\u5bb6\u6295\u63b7\u756a\u8304\u65f6\uff0c\u547d\u4e2d\u4e0d\u8ba1\u5165\u6295\u63b7\u8005\u7684\u6295\u63b7\u6b21\u6570\uff0c\u4f46\u4f1a\u8ba1\u5165\u8be5\u73a9\u5bb6\u88ab\u6295\u63b7\u7684\u6b21\u6570\u3002\u6bcf\u5c40\u4e00\u6b21\u3002",
@@ -1664,28 +1673,29 @@ function battleBalanceRuleText() {
       "混沌骰子：将所有尚未出牌玩家的手牌重发；选择者本回合倍率 +1，并额外加上重发手牌总数 x0.5 点。",
       "番茄大王：本回合倍率 +1；手牌按牌型倍率结算后，在最终分额外加上本局此前被其他玩家投掷番茄命中的次数 ×2。每局一次。",
       "番茄射手：本回合倍率 +1；手牌按牌型倍率结算后，在最终分额外加上本局此前向其他玩家投掷番茄的次数 ×2。每局一次。",
-      "卢安娜的飓风：暴击率 +25%，攻击速度 +40%；每次投掷番茄额外向两名随机其他玩家各发射一枚分裂番茄，可重复命中同一人；分裂番茄不再分裂。每局一次。",
-      "往日番茄：仅在第 5 回合出现；本回合将番茄命中次数的 0.5 倍加入手牌点数后，再一起乘以牌型倍率。",
-      "多米尼克领主的致意：暴击率 +25%；本回合及之后，高牌、一对、两对、三条、顺子的倍率至少为 6。每局一次。",
-      "收集者：暴击率 +25%；本回合点数 +10。之后若上一回合得分最高，额外获得 2 次弃牌，且投掷番茄计数增加其他玩家投掷总数的 10%（向下取整）。每局一次。",
+      "卢安娜的飓风：暴击率 +25%，攻击速度 +40%；每次投掷番茄额外发射 2 个不递归的分裂番茄至随机其他玩家，同一目标可重复。每局一次。",
+      "往日番茄：只在第 5 回合出现；本局此前番茄命中数 ×0.5 加入手牌点数后再乘牌型倍率。",
+      "多米尼克领主的致意：暴击率 +25%；从本回合起，高牌、一对、两对、三条、顺子的牌型倍率至少为 6。每局一次。",
+      "收集者：暴击率 +25%，本回合点数 +10；之后若上一回合得分最高，额外获得 2 次弃牌和其他玩家总投掷次数之和的 10%（取整）作为投掷计数。每局一次。",
+      "幻影之舞：暴击率 +25%，攻击速度 +65%，本回合点数 +5、倍率 +1.5；你的番茄只给自己增加命中计数，投向你的番茄不给对方投掷计数。每局一次。",
       "同花大顺：打出同花顺时，最终分 +1000。",
       "质变：顺子：若打出顺子，按同花顺倍率计算。每局一次。",
-      "双角龙：本回合倍率 +3；本局番茄命中和投掷有效计数变为 3 倍，包括选择前已有计数。",
-      "面包和奶酪：本局之后所有三条牌型倍率 +1，基础点数 +12。",
-      "面包和黄油：本局之后所有两对牌型倍率 +2，基础点数 +5。",
-      "面包和果酱：本局之后所有顺子牌型倍率 +2，基础点数 +3。",
+      "双角龙：本回合倍率 +3；本局番茄命中和投掷有效计数变为 3 倍，包括选择前已有计数。每局一次。",
+      "面包和奶酪：本局之后所有三条牌型倍率 +1，基础点数 +12。每局一次。",
+      "面包和黄油：本局之后所有两对牌型倍率 +2，基础点数 +5。每局一次。",
+      "面包和果酱：本局之后所有顺子牌型倍率 +2，基础点数 +3。每局一次。",
       "星界身体：本回合最终分 +1000；从本回合开始，本局之后每回合最终得分降低至 50%。每局一次。",
       "钢化番茄：从本回合开始持续判定；若有效命中次数超过 30 或有效投掷次数超过 50，每回合在手牌结算后额外加入（命中×0.5 + 投掷×0.2）×0.75。每局一次。",
-      "回归基本功：只在第 2/3 回合出现；之后不能再选特效；第 2/3/4/5 回合均 +18 点数、倍率 +1.5/+1.5/+1.5/+1.75，并额外获得 4 次弃牌。",
-      "亮出你的剑：只在第 2/3 回合出现；之后不能再弃牌；第 2/3/4/5 回合均 +15 点数和 +2.25 倍率。刷新球可重新允许弃牌但保留亮剑加成。",
-      "关键暴击：从本回合开始，参与牌型计分的牌有 50% 几率暴击，暴击点数 x1.75。",
-      "无尽之刃：从本回合开始，参与牌型计分的牌暴击率 +25%，暴击倍率提高到 x2.25。",
-      "暴击切牌：从本回合开始，参与牌型计分的牌暴击率 +25%；每回合若至少一张计分牌触发暴击，额外获得 1 次弃牌。",
+      "回归基本功：只在第 2/3 回合出现；之后不能再选特效，立即额外获得 4 次弃牌；第 2/3/4/5 回合均获得 +18 点数，倍率为 +1.5/+1.5/+1.5/+1.75。每局一次。",
+      "亮出你的剑：只在第 2/3 回合出现；之后不能再弃牌；第 2/3/4/5 回合均获得 +15 点数和 +2.25 倍率。刷新球可重新允许弃牌但保留亮剑加成。每局一次。",
+      "关键暴击：从本回合开始，参与牌型计分的牌有 50% 几率暴击，暴击点数 x1.75。每局一次。",
+      "无尽之刃：从本回合开始，参与牌型计分的牌暴击率 +25%，暴击倍率提高到 x2.25。每局一次。",
+      "暴击切牌：从本回合开始，参与牌型计分的牌暴击率 +25%；每回合若至少一张计分牌触发暴击，额外获得 1 次弃牌。每局一次。",
       "残暴之力：本回合点数 +25，倍率 +1。",
       "大力：本回合计分点数之和 x1.5 后再乘以牌型倍率。",
       "刷新球：本回合倍率 +1，并额外获得 4 次弃牌；若此前被亮剑禁止弃牌，则重新允许弃牌。",
-      "巨人杀手：从本回合开始，按回合开始前与最高总分的差距提升本回合得分：x1.3/x1.5/x1.7/x2/x2.5。",
-      "马太效应：本回合倍率 +2；之后每次单回合得分最高时，额外获得 3 次弃牌。",
+      "巨人杀手：从本回合开始，按回合开始前与最高总分的差距提升本回合得分：x1.3/x1.5/x1.7/x2/x2.5。每局一次。",
+      "马太效应：本回合倍率 +2；之后每次单回合得分最高时，额外获得 3 次弃牌。每局一次。",
       "直接来吧：结算时将当前剩余未使用弃牌次数额外加到倍率上。",
       "红温火烤：如果在自己的回合开始后 15 秒内出牌，本回合点数 +10 后再乘以倍率。"
     ];
@@ -1709,8 +1719,13 @@ function battleBalanceRuleText() {
     "GOELIA: your hand cards become non-identical ranks from 8, 9, 10, J, Q, and K while keeping suits.",
     "Shadow Targeting: swap two hand cards with two random cards from an unplayed target. This round gains +1 multiplier and extra chips equal to the gained cards' chip values.",
     "Chaos Dice: reroll every unplayed player's hand. The selector gains +1 multiplier and bonus chips equal to total rerolled hand cards x0.5.",
-    "King of the Tomato: this round gains +1 multiplier; after hand scoring, earlier tomato hits against you this game add hits x1.5 to final score. Once per game.",
-    "Tomato Shooter: this round gains +1 multiplier; after hand scoring, earlier tomatoes you threw this game add throws x1.5 to final score. Once per game.",
+    "King of the Tomato: this round gains +1 multiplier; after hand scoring, earlier tomato hits against you this game add hits x2 to final score. Once per game.",
+    "Tomato Shooter: this round gains +1 multiplier; after hand scoring, earlier tomatoes you threw this game add throws x2 to final score. Once per game.",
+    "Runaan's Hurricane: gain +25% crit chance and +40% attack speed. Each tomato fires two non-recursive split tomatoes at random other players; the same target may be hit twice. Once per game.",
+    "Old days' Tomatoes: only appears in round 5. Earlier tomato hits this game add hits x0.5 before hand multiplier.",
+    "Lord Dominick's Regards: gain +25% crit chance. From this round onward, High Card through Straight use at least x6 hand multiplier. Once per game.",
+    "The Collector: gain +25% crit chance and +10 chips this round. After any previous-round win, gain 2 discards and 10% of all other players' total throws, floored, as bonus throw count. Once per game.",
+    "Dance of Illusions: gain +25% crit chance, +65% attack speed, +5 chips and +1.5 multiplier this round. Your tomatoes add hit count only to you; tomatoes thrown at you give the thrower no throw count. Once per game.",
     "Straight Flush: when you play a Straight Flush, gain +1000 final score.",
     "Change: Straight: if your played hand is a Straight, calculate its multiplier as a Straight Flush. Once per game.",
     "Protoceratops: this round gains +3 multiplier. Your effective tomato hit and throw counts become three times their raw values for the whole game. Once per game.",
@@ -1718,9 +1733,9 @@ function battleBalanceRuleText() {
     "Bread and butter: for the rest of this game, your Two Pair gains +2 multiplier and +5 chips. Once per game.",
     "Bread and Jam: for the rest of this game, your Straights gain +2 multiplier and +3 chips. Once per game.",
     "Astral Body: this round gains +1000 final score, but later scores this game are halved. Once per game.",
-    "Tempered Tomato: from this round onward, thresholds are checked continuously. Once effective hits exceed 30 or throws exceed 50, each round adds (hits x0.5 + throws x0.2) x0.5 to final score after hand scoring, rounded to one decimal. Once per game.",
-    "Returning to the fundamentals: only appears in rounds 2/3. You cannot choose more effects. Rounds 2/3/4/5 gain +12/+15/+15/+18 chips and +1.25/+1.5/+1.5/+1.75 multiplier. Once per game.",
-    "Draw your sword: only appears in rounds 2/3. You cannot discard. Rounds 2/3/4/5 gain +12/+12/+12/+15 chips and +1.5/+1.75/+1.75/+2 multiplier. Once per game. Refresher Orb can re-enable discards without removing these bonuses.",
+    "Tempered Tomato: from this round onward, thresholds are checked continuously. Once effective hits exceed 30 or throws exceed 50, each round adds (hits x0.5 + throws x0.2) x0.75 to final score after hand scoring. Once per game.",
+    "Returning to the fundamentals: only appears in rounds 2/3. You cannot choose more effects and immediately gain 4 discard uses. Rounds 2/3/4/5 gain +18 chips and +1.5/+1.5/+1.5/+1.75 multiplier. Once per game.",
+    "Draw your sword: only appears in rounds 2/3. You cannot discard. Rounds 2/3/4/5 each gain +15 chips and +2.25 multiplier. Once per game. Refresher Orb can re-enable discards without removing these bonuses.",
     "Critical Hit: from this round onward, scoring-hand cards have 50% crit chance for x1.75 chips. Once per game.",
     "Infinity Edge: from this round onward, scoring-hand cards gain +25% crit chance and the crit multiplier rises to x2.25. Once per game.",
     "Critical Switch Hand: from this round onward, scoring-hand cards gain +25% crit chance; any scoring-card crit in a round grants 1 extra discard. Once per game.",
@@ -1728,10 +1743,66 @@ function battleBalanceRuleText() {
     "Brutal Force: this round gains +25 chips and +1 multiplier.",
     "Vigorous: this round multiplies the chip total by x1.5 before applying hand multiplier.",
     "Refresher Orb: this round gains +1 multiplier and 4 extra discard uses. If Draw your sword blocked discards, discards are re-enabled without removing Draw your sword's scoring bonuses.",
-    "Giant Killer: from this round onward, boost round score based on the gap to the leading total at round start. Once per game.",
+    "Giant Killer: from this round onward, boost round score based on the gap to the leading total at round start: x1.3/x1.5/x1.7/x2/x2.5. Once per game.",
     "Matthew effect: this round gains +2 multiplier. Later round wins grant 3 extra discard uses. Once per game.",
     "Bite me: at scoring time, add your remaining unused discard uses to this round's multiplier.",
     "Rambo: if you play within 15 seconds after your turn starts, gain +10 chips before multiplying."
+  ];
+}
+
+function battleBalanceRuleTextZh() {
+  return [
+    "基础计分：高牌仅计最高牌；一对仅计对子；两对仅计两对；三条与四条仅计同点数牌；顺子、同花、葫芦、同花顺计全部五张。",
+    "踢脚牌：未参与牌型的牌按自身点数 40%（向下取整）加入点数，合计最高 20；这些点数也可触发暴击。",
+    "暴击：每张计分牌与有踢脚牌贡献的牌独立判定；本回合没有任何暴击时，最终得分额外 +100。",
+    "同花色点数增强：指定花色获得 max(8, 4×匹配张数) 点，最高 20，并且倍率 +1。",
+    "点数增强：先从当前手牌或公共牌选一个实际存在的点数；获得 max(10, 6×匹配张数) 点，最高 24。",
+    "红色增幅：红桃、方块每张 +4；黑桃、梅花每张 +2。",
+    "对子引擎：点数增加 max(8, 8×对子数量)；若为一对或两对，倍率再 +2。",
+    "同花引擎：无条件 +7 点；同花或同花顺时倍率再 +1.5。",
+    "虚空侵蚀：重发一张公共牌；点数 +5、倍率 +1。按之后尚未出牌人数 n，再得 +max(1,n) 倍率与 +70n 最终分。",
+    "虚空索敌：与未出牌玩家随机两张手牌交换；倍率 +2，最终分额外加换得两张牌点数和×10。",
+    "混沌骰子：重发所有未出牌玩家手牌；倍率 +1、点数 +10 + 0.5m，最终分再 +10m（m 为重发手牌总数）。",
+    "大力：手牌结算后，最终分额外增加 100 + 手牌得分×25%，最高增加 200。",
+    "红温火烤：回合开始 20 秒内出牌时，点数 +10 后乘倍率，最终分再 +150。",
+    "番茄大王与番茄射手：本回合倍率 +1；此前命中或投掷次数各按 ×5 加入最终分。",
+    "钢化番茄：命中超过 30 或投掷超过 50 后，每回合最终分额外加入（命中×0.5 + 投掷×0.2）×5。",
+    "往日番茄：仅第 5 回合出现；此前投掷次数×0.5 加入手牌点数后再乘牌型倍率。",
+    "幻影之舞：暴击 +25%、攻速 +65%；选择回合 +5 点、+1.5 倍率。自己的番茄只增加自己的命中数；投向自己时只增加自己的被命中数，投掷方不增加投掷数。",
+    "面包和奶酪：从本回合起每回合 +5 点；三条、葫芦、四条再 +7 点、+1 倍率。",
+    "面包和黄油：从本回合起每回合 +4 点；一对、两对再 +5 点、+2 倍率。",
+    "面包和果酱：从本回合起每回合 +4 点；顺子再 +5 点、+2 倍率。",
+    "星界躯体：本回合最终分 +1000；第 2/3/4 回合总得分分别降至 70%/60%/50%，不会在第 5 回合出现。",
+    "卢安娜的飓风、领主的致意、收集者、回归基本功、亮出你的剑等持续特效的详细数值会显示在对应特效卡与牌桌状态栏。",
+    "所有最终得分在内部计算完成后向下取整为整数。"
+  ];
+}
+
+function battleBalanceRuleTextEn() {
+  return [
+    "Base scoring: High Card scores only its highest card; One Pair, Two Pair, Three/Four of a Kind score only their made cards; Straight, Flush, Full House, and Straight Flush score all five.",
+    "Kickers: cards outside the made hand add 40% of their chip value, rounded down, up to 20 total. Those contributions may crit.",
+    "Crits: scoring cards and contributing kickers roll independently. A round with no crit adds +100 final score.",
+    "Suit chip boost: gain max(8, 4 x matching cards) chips, capped at 20, and +1 mult.",
+    "Rank boost: choose a current hand or community card to set an existing rank; gain max(10, 6 x matching cards) chips, capped at 24.",
+    "Red boost: Hearts and Diamonds gain +4 chips each; Spades and Clubs gain +2 each.",
+    "Pair engine: gain max(8, 8 x pair ranks) chips; One Pair and Two Pair gain another +2 mult.",
+    "Flush engine: gain +7 chips; Flush and Straight Flush gain another +1.5 mult.",
+    "Void Erosion: replace one community card; gain +5 chips and +1 mult. With n later unplayed players, also gain +max(1,n) mult and +70n final score.",
+    "Shadow Targeting: swap for two random hand cards from an unplayed target; gain +2 mult and the gained-card chip total x10 as final score.",
+    "Chaos Dice: reroll every unplayed hand; gain +1 mult, +10 + 0.5m chips, and +10m final score, where m is the rerolled card count.",
+    "Vigorous: after hand scoring, add 100 + 25% of hand score to final score, capped at 200.",
+    "Rambo: play within 20 seconds to gain +10 chips before multiplier and +150 final score.",
+    "King of the Tomato and Tomato Shooter: gain +1 mult and add earlier hits or throws x5 to final score.",
+    "Tempered Tomato: after its threshold, each round adds (hits x0.5 + throws x0.2) x5 final score.",
+    "Old days' Tomatoes: only in round 5; earlier throws x0.5 are added before hand multiplier.",
+    "Dance of Illusions: +25% crit and +65% attack speed; its selection round gains +5 chips and +1.5 mult, with its ghost tomato-count rules.",
+    "Bread and cheese: +5 chips every round; Three of a Kind, Full House, and Four of a Kind also gain +7 chips and +1 mult.",
+    "Bread and butter: +4 chips every round; One Pair and Two Pair also gain +5 chips and +2 mult.",
+    "Bread and Jam: +4 chips every round; Straights also gain +5 chips and +2 mult.",
+    "Astral Body: +1000 final score this round; round 2/3/4+ total score becomes 70%/60%/50%, and it never appears in round 5.",
+    "Persistent effects such as Runaan's Hurricane, Lord Dominick's Regards, The Collector, Returning to the Fundamentals, and Draw Your Sword show their detailed values on their effect cards and table status.",
+    "Final scores are floored to integers after the full calculation."
   ];
 }
 
@@ -2988,7 +3059,7 @@ function findYourEffectOption(you, effectId) {
 }
 
 function effectNeedsTarget(effect) {
-  return ["pattern-reproduction", "shadow-swap", "void-erosion", "shadow-targeting"].includes(effect?.kind);
+  return ["rank-chip", "pattern-reproduction", "shadow-swap", "void-erosion", "shadow-targeting"].includes(effect?.kind);
 }
 
 function beginBattleEffect(effect) {
@@ -3015,6 +3086,7 @@ function cancelBattleEffectTarget() {
 }
 
 function battleEffectTargetPrompt(effect) {
+  if (effect.kind === "rank-chip") return isZh() ? "选择一张当前手牌或公共牌来确定点数。" : "Choose one current hand or community card to set the rank.";
   if (effect.kind === "pattern-reproduction") return t("Choose two hand cards in order.");
   if (effect.kind === "shadow-swap") return t("Choose one hand card and one community card.");
   if (effect.kind === "void-erosion") return t("Choose one community card.");
@@ -3032,6 +3104,7 @@ function battleEffectTargetStatus(effect, target, table) {
 }
 
 function battleEffectTargetReady(effect, target) {
+  if (effect.kind === "rank-chip") return target.cardTargets.length === 1 && ["hand", "community"].includes(target.cardTargets[0].source);
   if (effect.kind === "pattern-reproduction") return target.cardTargets.length === 2 && target.cardTargets.every((entry) => entry.source === "hand");
   if (effect.kind === "shadow-swap") {
     return target.cardTargets.some((entry) => entry.source === "hand") && target.cardTargets.some((entry) => entry.source === "community");
@@ -3125,6 +3198,9 @@ function toggleBattleEffectTargetCard(code, source) {
   if (target.kind === "pattern-reproduction") {
     if (source !== "hand" || target.cardTargets.length >= 2) return;
     target.cardTargets.push({ code, source });
+  } else if (target.kind === "rank-chip") {
+    if (!['hand', 'community'].includes(source)) return;
+    target.cardTargets = [{ code, source }];
   } else if (target.kind === "shadow-swap") {
     if (!["hand", "community"].includes(source)) return;
     target.cardTargets = target.cardTargets.filter((entry) => entry.source !== source);
@@ -3172,7 +3248,7 @@ function translateBattleHand(handName) {
 function battleEffectName(effect) {
   const suit = battleSuitName(effect.suit);
   if (effect.kind === "suit-chip") return isZh() ? `${suit}\u70b9\u6570\u589e\u5f3a` : `${suit} chip boost`;
-  if (effect.kind === "rank-chip") return isZh() ? `${effect.rank}\u70b9\u589e\u5f3a` : `${effect.rank} rank boost`;
+  if (effect.kind === "rank-chip") return effect.rank ? (isZh() ? `${effect.rank}\u70b9\u589e\u5f3a` : `${effect.rank} rank boost`) : (isZh() ? "\u70b9\u6570\u589e\u5f3a" : "Rank boost");
   if (effect.kind === "pair-mult") return isZh() ? "\u5bf9\u5b50\u5f15\u64ce" : "Pair engine";
   if (effect.kind === "flush-mult") return isZh() ? "\u540c\u82b1\u5f15\u64ce" : "Flush engine";
   if (effect.kind === "red-chip") return isZh() ? "\u7ea2\u8272\u589e\u5e45" : "Red boost";
@@ -3213,6 +3289,7 @@ function battleEffectName(effect) {
   if (effect.kind === "matthew-effect") return isZh() ? "马太效应" : "Matthew effect";
   if (effect.kind === "critical-switch-hand") return isZh() ? "暴击切牌" : "Critical Switch Hand";
   if (effect.kind === "dance-illusions") return isZh() ? "\u5e7b\u5f71\u4e4b\u821e" : "Dance of Illusions";
+  if (effect.kind === "no-critical-hit") return isZh() ? "\u672a\u89e6\u53d1\u66b4\u51fb" : "No critical hit";
   if (effect.kind === "rambo") return isZh() ? "\u7ea2\u6e29\u706b\u70e4" : "Rambo";
   return effect.kind || "";
 }
@@ -3280,26 +3357,123 @@ function battleEffectDescription(effect) {
 function battleBalanceEffectDescription(effect) {
   if (!effect) return "";
   const suit = battleSuitName(effect.suit);
+  if (effect.kind === "suit-chip") return isZh()
+    ? `${suit}点数增强：按本次五张牌的同花色数量，获得 max(8, 4×匹配张数) 点，最高 20 点；本回合倍率 +1。`
+    : `${suit} chip boost: gain max(8, 4 x matching cards) chips, capped at 20, and +1 mult this round.`;
+  if (effect.kind === "rank-chip") {
+    const rank = effect.rank || "-";
+    return isZh()
+      ? (effect.rank ? `${rank}点数增强：本回合额外获得 max(10, 6×匹配张数) 点，最高 24 点。` : "点数增强：选择一张当前手牌或公共牌来确定实际存在的点数；随后按该点数的匹配张数加成。")
+      : (effect.rank ? `${rank} rank boost: gain max(10, 6 x matching cards) chips, capped at 24.` : "Rank boost: choose a current hand or community card to set an existing rank.");
+  }
+  if (effect.kind === "pair-mult") return isZh()
+    ? "对子引擎：计分点数增加 max(8, 8×对子数量) 点；若为一对或两对，倍率额外 +2。"
+    : "Pair engine: gain max(8, 8 x pair ranks) chips; One Pair and Two Pair also gain +2 mult.";
+  if (effect.kind === "flush-mult") return isZh()
+    ? "同花引擎：无条件额外 +7 点；若为同花或同花顺，倍率额外 +1.5。"
+    : "Flush engine: gain +7 chips; Flush and Straight Flush also gain +1.5 mult.";
+  if (effect.kind === "red-chip") return isZh()
+    ? "红色增幅：本次五张牌中，红桃或方块每张 +4 点，黑桃或梅花每张 +2 点。"
+    : "Red boost: Hearts and Diamonds gain +4 chips each; Spades and Clubs gain +2 each.";
+  if (effect.kind === "void-erosion") {
+    const following = Math.max(0, Number(effect.followingUnplayedPlayers) || 0);
+    return isZh()
+      ? `选择并重发一张公共牌；本回合点数 +5、倍率 +1，并额外获得 +${Math.max(1, following)} 倍率和 +${following * 70} 总分（之后尚有 ${following} 位未出牌玩家）。`
+      : `Replace one community card. Gain +5 chips, +1 mult, then +${Math.max(1, following)} mult and +${following * 70} final score for ${following} later unplayed players.`;
+  }
+  if (effect.kind === "shadow-targeting") {
+    const gained = Math.max(0, Number(effect.gainedChipBonus) || 0);
+    return isZh()
+      ? `与未出牌玩家随机两张手牌交换；本回合倍率 +2，且最终总分额外 +${gained * 10}（换得两张牌点数和 ${gained} ×10）。`
+      : `Swap two hand cards with an unplayed target's random cards. Gain +2 mult and +${gained * 10} final score (gained card chips ${gained} x10).`;
+  }
+  if (effect.kind === "chaos-dice") {
+    const count = Math.max(0, Number(effect.rerolledCardCount) || 0);
+    return isZh()
+      ? `重发所有未出牌玩家的手牌；本回合倍率 +1、点数 +${10 + count * 0.5}，并额外 +${count * 10} 总分（本次重发 ${count} 张）。`
+      : `Reroll every unplayed hand. Gain +1 mult, +${10 + count * 0.5} chips, and +${count * 10} final score (${count} cards rerolled).`;
+  }
+  if (effect.kind === "vigorous") return isZh()
+    ? "大力：本回合手牌结算后，最终总分额外增加 100 + 手牌得分×25%，最高增加 200。"
+    : "Vigorous: after hand scoring, add 100 + 25% of hand score to final score, capped at 200.";
+  if (effect.kind === "rambo") return isZh()
+    ? "红温火烤：在回合开始后 20 秒内出牌，计分点数 +10 后乘以倍率，且最终总分额外 +150。"
+    : "Rambo: play within 20 seconds for +10 chips before multiplier and +150 final score.";
+  if (effect.kind === "bread-cheese") return isZh()
+    ? "面包和奶酪：从本回合起每回合计分点数 +5；三条、葫芦或四条时，再 +7 点和 +1 倍率。每局一次。"
+    : "Bread and cheese: from this round on gain +5 chips every round; Three of a Kind, Full House, and Four of a Kind also gain +7 chips and +1 mult. Once per game.";
+  if (effect.kind === "bread-butter") return isZh()
+    ? "面包和黄油：从本回合起每回合计分点数 +4；一对或两对时，再 +5 点和 +2 倍率。每局一次。"
+    : "Bread and butter: from this round on gain +4 chips every round; One Pair and Two Pair also gain +5 chips and +2 mult. Once per game.";
+  if (effect.kind === "bread-jam") return isZh()
+    ? "面包和果酱：从本回合起每回合计分点数 +4；顺子时，再 +5 点和 +2 倍率。每局一次。"
+    : "Bread and Jam: from this round on gain +4 chips every round; Straights also gain +5 chips and +2 mult. Once per game.";
+  if (effect.kind === "astral-body") return isZh()
+    ? "星界躯体：本回合最终分 +1000；从第 2/3/4 回合起，总得分分别降为 70%/60%/50%。不会在第 5 回合出现。每局一次。"
+    : "Astral Body: gain +1000 final score this round, then round 2/3/4+ total score becomes 70%/60%/50%. It never appears in round 5. Once per game.";
+  if (effect.kind === "astral-body-penalty") return isZh()
+    ? "星界躯体惩罚：本回合总得分按当前回合降为 70%/60%/50%。"
+    : "Astral Body penalty: this round's total score is reduced to 70%/60%/50% by round.";
   if (effect.kind === "tomato-king") {
     const hits = Math.max(0, Number(effect.tomatoHits) || 0);
-    return isZh() ? `\u672c\u56de\u5408\u500d\u7387 +1\uff1b\u624b\u724c\u7ed3\u7b97\u540e\u6700\u7ec8\u5206\u989d\u5916 +${hits * 2}\uff08${hits} \u6b21 \u00d72\uff09\u3002\u6bcf\u5c40\u4e00\u6b21\u3002` : `This round gains +1 mult; after hand scoring, add +${hits * 2} final score (${hits} hits x2). Once per game.`;
+    const bonus = hits * 5;
+    return isZh()
+      ? `\u672c\u56de\u5408\u500d\u7387 +1\uff1b\u624b\u724c\u6309\u724c\u578b\u500d\u7387\u7ed3\u7b97\u540e\uff0c\u6700\u7ec8\u5206\u989d\u5916 +${bonus}\uff08\u6b64\u524d\u88ab\u547d\u4e2d ${hits} \u6b21 \u00d75\uff09\u3002\u6bcf\u5c40\u4e00\u6b21\u3002`
+      : `This round gains +1 mult; after hand scoring, add +${bonus} final score (${hits} earlier hits x5). Once per game.`;
   }
   if (effect.kind === "tomato-shooter") {
     const throws = Math.max(0, Number(effect.tomatoThrows) || 0);
-    return isZh() ? `\u672c\u56de\u5408\u500d\u7387 +1\uff1b\u624b\u724c\u7ed3\u7b97\u540e\u6700\u7ec8\u5206\u989d\u5916 +${throws * 2}\uff08${throws} \u6b21 \u00d72\uff09\u3002\u6bcf\u5c40\u4e00\u6b21\u3002` : `This round gains +1 mult; after hand scoring, add +${throws * 2} final score (${throws} throws x2). Once per game.`;
+    const bonus = throws * 5;
+    return isZh()
+      ? `\u672c\u56de\u5408\u500d\u7387 +1\uff1b\u624b\u724c\u6309\u724c\u578b\u500d\u7387\u7ed3\u7b97\u540e\uff0c\u6700\u7ec8\u5206\u989d\u5916 +${bonus}\uff08\u6b64\u524d\u6295\u63b7 ${throws} \u6b21 \u00d75\uff09\u3002\u6bcf\u5c40\u4e00\u6b21\u3002`
+      : `This round gains +1 mult; after hand scoring, add +${bonus} final score (${throws} earlier throws x5). Once per game.`;
   }
-  if (effect.kind === "tempered-tomato") return isZh() ? "\u8fbe\u6807\u540e\u6bcf\u56de\u5408\u5728\u624b\u724c\u7ed3\u7b97\u540e\u989d\u5916\u52a0\u5165\uff08\u547d\u4e2d\u00d70.5 + \u6295\u63b7\u00d70.2\uff09\u00d70.75 \u6700\u7ec8\u5206\u3002\u6bcf\u5c40\u4e00\u6b21\u3002" : "Once active, after hand scoring add (hits x0.5 + throws x0.2) x0.75 final score each round. Once per game.";
-  if (effect.kind === "dance-illusions") return isZh() ? "\u66b4\u51fb\u7387 +25%\uff0c\u653b\u901f +65%\uff0c\u672c\u56de\u5408 +5 \u70b9\u6570\u3001+1.5 \u500d\u7387\u3002\u4f60\u7684\u756a\u8304\u53ea\u7ed9\u81ea\u5df1\u589e\u52a0\u547d\u4e2d\u8ba1\u6570\uff1b\u522b\u4eba\u6295\u4f60\u65f6\uff0c\u5bf9\u65b9\u4e0d\u83b7\u5f97\u6295\u63b7\u8ba1\u6570\u3002\u6bcf\u5c40\u4e00\u6b21\u3002" : "Gain +25% crit, +65% attack speed, +5 chips and +1.5 mult this round. Your tomatoes add hit count only to you; tomatoes thrown at you give the thrower no throw count. Once per game.";
-  if (effect.kind === "runaans-hurricane") return isZh() ? "\u66b4\u51fb\u7387 +25%\uff0c\u653b\u901f +40%\u3002\u6bcf\u6b21\u6295\u63b7\u540e\u5411\u968f\u673a\u5176\u4ed6\u73a9\u5bb6\u989d\u5916\u53d1\u5c04 2 \u4e2a\u4e0d\u9012\u5f52\u7684\u5206\u88c2\u756a\u8304\u3002\u6bcf\u5c40\u4e00\u6b21\u3002" : "Gain +25% crit and +40% attack speed. Each tomato fires two non-recursive split tomatoes at random other players. Once per game.";
+  if (effect.kind === "tempered-tomato") {
+    return isZh()
+      ? "\u6301\u7eed\u5224\u5b9a\u756a\u8304\u9608\u503c\uff1b\u8fbe\u6807\u540e\u6bcf\u56de\u5408\u5728\u624b\u724c\u7ed3\u7b97\u540e\u989d\u5916\u52a0\u5165\uff08\u547d\u4e2d\u00d70.5 + \u6295\u63b7\u00d70.2\uff09\u00d75 \u6700\u7ec8\u5206\u3002\u6bcf\u5c40\u4e00\u6b21\u3002"
+      : "Continuously checks tomato thresholds; once active, after hand scoring add (hits x0.5 + throws x0.2) x5 final score each round. Once per game.";
+  }
+  if (effect.kind === "dance-illusions") {
+    return isZh()
+      ? "\u66b4\u51fb\u7387 +25%\uff0c\u653b\u51fb\u901f\u5ea6 +65%\uff1b\u672c\u56de\u5408\u70b9\u6570 +5\u3001\u500d\u7387 +1.5\u3002\u4f60\u6295\u63b7\u7684\u756a\u8304\u53ea\u7ed9\u81ea\u5df1\u589e\u52a0\u547d\u4e2d\u8ba1\u6570\uff0c\u4e0d\u7ed9\u5bf9\u624b\u589e\u52a0\u88ab\u547d\u4e2d\u6216\u6295\u63b7\u8ba1\u6570\uff1b\u4ed6\u4eba\u6295\u4f60\u65f6\uff0c\u4f60\u4ecd\u83b7\u5f97\u88ab\u547d\u4e2d\u8ba1\u6570\uff0c\u5bf9\u65b9\u4e0d\u83b7\u5f97\u6295\u63b7\u8ba1\u6570\u3002\u6bcf\u5c40\u4e00\u6b21\u3002"
+      : "Gain +25% crit chance and +65% attack speed. This round gains +5 chips and +1.5 mult. Your tomatoes add hit count only to you; opponents gain neither hit nor throw count. Tomatoes thrown at you still add your hit count, while the thrower gains no throw count. Once per game.";
+  }
+  if (effect.kind === "runaans-hurricane") {
+    return isZh()
+      ? "\u66b4\u51fb\u7387 +25%\uff0c\u653b\u51fb\u901f\u5ea6 +40%\u3002\u6bcf\u6b21\u6295\u63b7\u756a\u8304\u540e\uff0c\u989d\u5916\u5411 2 \u540d\u968f\u673a\u5176\u4ed6\u73a9\u5bb6\u5404\u53d1\u5c04 1 \u9897\u5206\u88c2\u756a\u8304\uff08\u53ef\u91cd\u590d\u547d\u4e2d\u540c\u4e00\u76ee\u6807\uff09\uff1b\u5206\u88c2\u756a\u8304\u4e0d\u518d\u89e6\u53d1\u5206\u88c2\u3002\u6bcf\u5c40\u4e00\u6b21\u3002"
+      : "Gain +25% crit chance and +40% attack speed. Each tomato also fires two non-recursive split tomatoes at random other players; the same target may be hit twice. Once per game.";
+  }
   if (effect.kind === "old-days-tomatoes") {
-    const hits = Math.max(0, Number(effect.tomatoHits) || 0);
-    return isZh() ? `\u53ea\u5728\u7b2c 5 \u56de\u5408\u51fa\u73b0\uff1b${hits} \u6b21\u756a\u8304\u547d\u4e2d \u00d70.5 \u52a0\u5165\u624b\u724c\u70b9\u6570\u540e\u518d\u4e58\u724c\u578b\u500d\u7387\u3002` : `Only appears in round 5. ${hits} earlier tomato hits x0.5 are added before hand multiplier.`;
+    const throws = Math.max(0, Number(effect.tomatoThrows) || 0);
+    return isZh()
+      ? `\u53ea\u5728\u7b2c 5 \u56de\u5408\u51fa\u73b0\u3002\u672c\u5c40\u6b64\u524d\u7684\u756a\u8304\u6295\u63b7\u6570 ${throws} \u00d70.5 \u52a0\u5165\u624b\u724c\u70b9\u6570\uff0c\u518d\u4e0e\u724c\u578b\u500d\u7387\u4e00\u8d77\u8ba1\u7b97\u3002`
+      : `Only appears in round 5. Earlier tomato throws this game add ${throws} x0.5 chips before hand multiplier.`;
   }
-  if (effect.kind === "lord-dominicks-regards") return isZh() ? "\u66b4\u51fb\u7387 +25%\uff1b\u4ece\u672c\u56de\u5408\u8d77\uff0c\u9ad8\u724c\u81f3\u987a\u5b50\u7684\u724c\u578b\u500d\u7387\u81f3\u5c11\u4e3a 6\u3002\u6bcf\u5c40\u4e00\u6b21\u3002" : "Gain +25% crit. From this round onward, High Card through Straight use at least x6 hand multiplier. Once per game.";
-  if (effect.kind === "collector") return isZh() ? "\u66b4\u51fb\u7387 +25%\uff0c\u672c\u56de\u5408 +10 \u70b9\u6570\u3002\u4e4b\u540e\u82e5\u4e0a\u4e00\u56de\u5408\u7b2c\u4e00\uff0c\u83b7\u5f97 2 \u6b21\u5f03\u724c\u548c\u5176\u4ed6\u73a9\u5bb6\u603b\u6295\u63b7\u6570\u7684 10%\uff08\u53d6\u6574\uff09\u4f5c\u4e3a\u989d\u5916\u6295\u63b7\u8ba1\u6570\u3002\u6bcf\u5c40\u4e00\u6b21\u3002" : "Gain +25% crit and +10 chips this round. After a previous-round win, gain 2 discards and 10% of other players' total throws, floored, as bonus throw count. Once per game.";
-  if (effect.kind === "returning-fundamentals") return isZh() ? "\u53ea\u5728\u7b2c 2/3 \u56de\u5408\u51fa\u73b0\uff1b\u4e4b\u540e\u4e0d\u80fd\u518d\u9009\u7279\u6548\uff0c\u7acb\u5373 +4 \u6b21\u5f03\u724c\u3002\u7b2c 2/3/4/5 \u56de\u5408\u5747 +18 \u70b9\u6570\uff0c\u500d\u7387 +1.5/+1.5/+1.5/+1.75\u3002" : "Only appears in rounds 2/3. You cannot choose more effects and gain 4 discards. Rounds 2/3/4/5 gain +18 chips and +1.5/+1.5/+1.5/+1.75 mult.";
-  if (effect.kind === "draw-sword") return isZh() ? "\u53ea\u5728\u7b2c 2/3 \u56de\u5408\u51fa\u73b0\uff1b\u4e4b\u540e\u4e0d\u80fd\u5f03\u724c\u3002\u7b2c 2/3/4/5 \u56de\u5408\u5747 +15 \u70b9\u6570\u548c +2.25 \u500d\u7387\u3002" : "Only appears in rounds 2/3. You cannot discard. Rounds 2/3/4/5 each gain +15 chips and +2.25 mult.";
-  if (effect.kind === "giant-killer") return isZh() ? "\u4ece\u672c\u56de\u5408\u8d77\uff0c\u6309\u4e0e\u9886\u5148\u8005\u7684\u5206\u5dee\u63d0\u5347\u5f97\u5206\uff1ax1.3/x1.5/x1.7/x2/x2.5\u3002\u6bcf\u5c40\u4e00\u6b21\u3002" : "From this round onward, boost score by the gap to the leader: x1.3/x1.5/x1.7/x2/x2.5. Once per game.";
+  if (effect.kind === "lord-dominicks-regards") {
+    return isZh()
+      ? "\u66b4\u51fb\u7387 +25%\u3002\u4ece\u672c\u56de\u5408\u8d77\uff0c\u9ad8\u724c\u3001\u4e00\u5bf9\u3001\u4e24\u5bf9\u3001\u4e09\u6761\u3001\u987a\u5b50\u7684\u724c\u578b\u500d\u7387\u90fd\u81f3\u5c11\u4e3a 6\u3002\u6bcf\u5c40\u4e00\u6b21\u3002"
+      : "Gain +25% crit chance. From this round onward, High Card through Straight use at least x6 hand multiplier. Once per game.";
+  }
+  if (effect.kind === "collector") {
+    return isZh()
+      ? "\u66b4\u51fb\u7387 +25%\uff1b\u672c\u56de\u5408\u70b9\u6570 +10\u3002\u4ece\u4e0b\u56de\u5408\u8d77\uff0c\u82e5\u4e0a\u4e00\u56de\u5408\u5f97\u5206\u6700\u9ad8\uff0c\u989d\u5916\u83b7\u5f97 2 \u6b21\u5f03\u724c\uff0c\u5e76\u83b7\u5f97\u5176\u4ed6\u73a9\u5bb6\u603b\u6295\u63b7\u6b21\u6570\u4e4b\u548c\u7684 10%\uff08\u53d6\u6574\uff09\u4f5c\u4e3a\u989d\u5916\u6295\u63b7\u8ba1\u6570\u3002\u6bcf\u5c40\u4e00\u6b21\u3002"
+      : "Gain +25% crit chance and +10 chips this round. After any previous-round win, gain 2 discard uses and 10% of all other players' total throws, floored, as bonus throw count. Once per game.";
+  }
+  if (effect.kind === "returning-fundamentals") {
+    return isZh()
+      ? "\u53ea\u5728\u7b2c 2/3 \u56de\u5408\u51fa\u73b0\uff1b\u4e4b\u540e\u4e0d\u80fd\u518d\u9009\u7279\u6548\uff0c\u7acb\u5373\u989d\u5916\u83b7\u5f97 4 \u6b21\u5f03\u724c\u3002\u7b2c 2/3/4/5 \u56de\u5408\u5747\u83b7\u5f97 +18 \u70b9\u6570\uff0c\u500d\u7387\u5206\u522b +1.5/+1.5/+1.5/+1.75\u3002\u6bcf\u5c40\u4e00\u6b21\u3002"
+      : "Only appears in rounds 2/3. You cannot choose more effects and immediately gain 4 discard uses. Rounds 2/3/4/5 gain +18 chips and +1.5/+1.5/+1.5/+1.75 mult. Once per game.";
+  }
+  if (effect.kind === "draw-sword") {
+    return isZh()
+      ? "\u53ea\u5728\u7b2c 2/3 \u56de\u5408\u51fa\u73b0\uff1b\u4e4b\u540e\u4e0d\u80fd\u518d\u5f03\u724c\u3002\u7b2c 2/3/4/5 \u56de\u5408\u5747\u83b7\u5f97 +15 \u70b9\u6570\u548c +2.25 \u500d\u7387\u3002\u6bcf\u5c40\u4e00\u6b21\u3002"
+      : "Only appears in rounds 2/3. You cannot discard. Rounds 2/3/4/5 each gain +15 chips and +2.25 mult. Once per game.";
+  }
+  if (effect.kind === "giant-killer") {
+    return isZh()
+      ? "\u4ece\u672c\u56de\u5408\u8d77\uff0c\u6309\u56de\u5408\u5f00\u59cb\u524d\u4e0e\u6700\u9ad8\u603b\u5206\u7684\u5dee\u8ddd\u63d0\u5347\u5f97\u5206\uff1ax1.3/x1.5/x1.7/x2/x2.5\u3002\u6bcf\u5c40\u4e00\u6b21\u3002"
+      : "From this round onward, boost score by the gap to the leading total at round start: x1.3/x1.5/x1.7/x2/x2.5. Once per game.";
+  }
   if (effect.kind === "tomato-king") {
     const hits = Math.max(0, Number(effect.tomatoHits) || 0);
     const bonus = Math.round(hits * 1.5 * 10) / 10;
