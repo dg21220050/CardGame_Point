@@ -1,6 +1,14 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { createDeck, createEffectOptions, criticalProfileForEffects, effectAllowedInRound, findBestPlay, scorePlay } = require("../score-battle-engine");
+const {
+  createDeck,
+  createEffectOptions,
+  criticalProfileForEffects,
+  effectAllowedInRound,
+  findBestPlay,
+  scorePlay,
+  tomatoCountRouting
+} = require("../score-battle-engine");
 
 function cards(codes) {
   const byCode = new Map(createDeck().map((card) => [card.code, card]));
@@ -123,6 +131,13 @@ test("tomato effects use throws for Old days and the restored x5 final bonuses",
   });
   assert.equal(tempered.scoreBonuses.find((bonus) => bonus.kind === "tempered-tomato").amount, 285);
   assert.equal(tempered.score, 360);
+});
+
+test("Dance of Illusions routes tomato counts to throws instead of self-hits", () => {
+  assert.deepEqual(tomatoCountRouting(false, false), { countsForThrower: true, countsForTarget: true });
+  assert.deepEqual(tomatoCountRouting(true, false), { countsForThrower: true, countsForTarget: false });
+  assert.deepEqual(tomatoCountRouting(false, true), { countsForThrower: false, countsForTarget: true });
+  assert.deepEqual(tomatoCountRouting(true, true), { countsForThrower: true, countsForTarget: false });
 });
 
 test("bread effects, Astral Body, and crit profiles follow the new rules", () => {

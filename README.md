@@ -48,7 +48,7 @@ The stop script only shuts down the CardGame Point server started from this fold
 - Played hand cards are permanently discarded; unused hand cards remain for the next round.
 - Each player starts with four discard uses per game. A discard can exchange any number of selected hand cards for unique replacements in the same hand positions.
 - During rounds 2-5, players may choose one of three private effect cards while selecting a play. Effects are optional and resolved by the server.
-- Players act one at a time in rotating seat order. Each turn has a two-minute timer. Timeout automatically plays the best available five-card score that includes a community card.
+- Players act one at a time in rotating seat order. Each turn has a 90-second timer. Timeout automatically plays the best available five-card score that includes a community card.
 - Interactive effects may change hands or the community board immediately, so later players in the same round see and score against the changed state.
 - Score Battle effects use the current balance rules shown in the in-game scoring rules panel.
 - Scores use the selected cards' point total (Ace is 15), hand multiplier, and effect modifiers. The five round scores are added together.

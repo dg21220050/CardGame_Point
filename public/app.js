@@ -3467,8 +3467,8 @@ function battleBalanceEffectDescription(effect) {
   }
   if (effect.kind === "dance-illusions") {
     return isZh()
-      ? "\u66b4\u51fb\u7387 +25%\uff0c\u653b\u51fb\u901f\u5ea6 +65%\uff1b\u672c\u56de\u5408\u70b9\u6570 +5\u3001\u500d\u7387 +1.5\u3002\u4f60\u6295\u63b7\u7684\u756a\u8304\u53ea\u7ed9\u81ea\u5df1\u589e\u52a0\u547d\u4e2d\u8ba1\u6570\uff0c\u4e0d\u7ed9\u5bf9\u624b\u589e\u52a0\u88ab\u547d\u4e2d\u6216\u6295\u63b7\u8ba1\u6570\uff1b\u4ed6\u4eba\u6295\u4f60\u65f6\uff0c\u4f60\u4ecd\u83b7\u5f97\u88ab\u547d\u4e2d\u8ba1\u6570\uff0c\u5bf9\u65b9\u4e0d\u83b7\u5f97\u6295\u63b7\u8ba1\u6570\u3002\u6bcf\u5c40\u4e00\u6b21\u3002"
-      : "Gain +25% crit chance and +65% attack speed. This round gains +5 chips and +1.5 mult. Your tomatoes add hit count only to you; opponents gain neither hit nor throw count. Tomatoes thrown at you still add your hit count, while the thrower gains no throw count. Once per game.";
+      ? "\u66b4\u51fb\u7387 +25%\uff0c\u653b\u51fb\u901f\u5ea6 +65%\uff1b\u672c\u56de\u5408\u70b9\u6570 +5\u3001\u500d\u7387 +1.5\u3002\u4f60\u6295\u63b7\u7684\u756a\u8304\u53ea\u7ed9\u81ea\u5df1\u589e\u52a0\u6295\u63b7\u8ba1\u6570\uff0c\u4e0d\u7ed9\u5bf9\u624b\u589e\u52a0\u88ab\u547d\u4e2d\u8ba1\u6570\uff1b\u4ed6\u4eba\u6295\u4f60\u65f6\uff0c\u4f60\u4ecd\u83b7\u5f97\u88ab\u547d\u4e2d\u8ba1\u6570\uff0c\u5bf9\u65b9\u4e0d\u83b7\u5f97\u6295\u63b7\u8ba1\u6570\u3002\u6bcf\u5c40\u4e00\u6b21\u3002"
+      : "Gain +25% crit chance and +65% attack speed. This round gains +5 chips and +1.5 mult. Your tomatoes add only to your throw count and do not add hit count to opponents. Tomatoes thrown at you still add your hit count, while the thrower gains no throw count. Once per game.";
   }
   if (effect.kind === "runaans-hurricane") {
     return isZh()

@@ -563,6 +563,13 @@ function criticalProfileForEffects(persistentEffects = {}) {
   };
 }
 
+function tomatoCountRouting(throwerHasDanceIllusions, targetHasDanceIllusions) {
+  return {
+    countsForThrower: Boolean(throwerHasDanceIllusions) || !targetHasDanceIllusions,
+    countsForTarget: !throwerHasDanceIllusions
+  };
+}
+
 function criticalMultiplierForCard(index, profile, criticalRolls, useExpectedValue) {
   if (profile.chance <= 0) return 1;
   if (criticalRolls[index] === true) return profile.multiplier;
@@ -640,5 +647,6 @@ module.exports = {
   rankValue,
   rankSymbol,
   scorePlay,
-  shuffle
+  shuffle,
+  tomatoCountRouting
 };

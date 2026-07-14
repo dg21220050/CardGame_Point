@@ -47,7 +47,7 @@ const SCORE_BATTLE_MAX_SEATS = 6;
 const SCORE_BATTLE_MIN_PLAYERS = 2;
 const SCORE_BATTLE_ROUNDS = 5;
 const SCORE_BATTLE_DISCARD_USES = 4;
-const SCORE_BATTLE_PLAY_SECONDS = 120;
+const SCORE_BATTLE_PLAY_SECONDS = 90;
 const SCORE_BATTLE_RESULT_SECONDS = 6;
 const SCORE_BATTLE_ONCE_PER_GAME_EFFECTS = new Set([
   "tomato-king",
@@ -3245,15 +3245,14 @@ function recordScoreTomatoHit(table, from, target, now) {
   if (!table.gameNumber || !table.round || ["waiting", "finished"].includes(table.phase)) return;
   const danceThrower = Boolean(from?.persistentEffects?.danceIllusions);
   const danceTarget = Boolean(target?.persistentEffects?.danceIllusions);
-  const countedTarget = danceThrower ? from : target;
-  const countsForThrower = !danceThrower && !danceTarget;
+  const countRouting = scoreBattle.tomatoCountRouting(danceThrower, danceTarget);
   table.scoreTomatoHits = (table.scoreTomatoHits || []).filter((hit) => Number(hit.gameNumber) === Number(table.gameNumber));
   table.scoreTomatoHits.push({
     gameNumber: table.gameNumber,
     round: table.round,
     fromSeatId: from.seatId,
-    toSeatId: countedTarget.seatId,
-    countsForThrower,
+    toSeatId: countRouting.countsForTarget ? target.seatId : null,
+    countsForThrower: countRouting.countsForThrower,
     createdAt: now
   });
 }
