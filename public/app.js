@@ -157,6 +157,19 @@ Object.assign(zhText, {
   "Discard uses left": "\u5269\u4f59\u5f03\u724c\u6b21\u6570",
   "Play cards": "\u51fa\u724c",
   "Submit play": "\u786e\u8ba4\u51fa\u724c",
+  "One-click play": "一键出牌",
+  "Choosing best play": "正在计算最佳出牌",
+  "Choose one FATE before playing.": "出牌前必须选择一个 FATE。",
+  "Choose one of two FATE cards": "从两个 FATE 中选择一个",
+  "FATE is required in round 1.": "第一回合必须选择一个 FATE。",
+  "Roll dice": "掷骰子",
+  "Rolls left": "剩余投掷",
+  "Dice": "骰子",
+  "Misfortune": "厄运",
+  "Prediction streak": "预测连胜",
+  "Choose prediction target": "选择预测目标",
+  "Collected hands": "已收藏牌型",
+  "FATE locked": "已选择 FATE",
   "Choose exactly 5 cards": "\u8bf7\u9009\u62e9\u6b63\u597d 5 \u5f20\u724c",
   "Selected for discard": "\u5df2\u9009\u5f03\u724c",
   "Selected to play": "\u5df2\u9009\u51fa\u724c",
@@ -186,6 +199,8 @@ Object.assign(zhText, {
   "Update 0.0.4": "0.0.4 \u66f4\u65b0\u5185\u5bb9",
   "Update 0.0.5": "0.0.5 \u66f4\u65b0\u5185\u5bb9",
   "Update 0.0.6": "0.0.6 更新内容",
+  "Round 1 now uses the required two-choice FATE build system.": "第一回合加入必须二选一的 FATE 构筑系统。",
+  "One-click play automatically submits the highest-scoring valid hand with your selected effect.": "新增一键出牌，会根据已选择特效自动打出预计得分最高的有效五张牌。",
   "Score Battle now shows every player's played cards, with community cards highlighted.": "\u79ef\u5206\u5bf9\u6218\u73b0\u5728\u4f1a\u5c55\u793a\u6bcf\u4f4d\u73a9\u5bb6\u6253\u51fa\u7684\u5177\u4f53\u724c\uff0c\u5e76\u9ad8\u4eae\u5176\u4e2d\u7684\u516c\u5171\u724c\u3002",
   "Score plays must include at least one community card, and hand sizes are now 3 / 4 / 5.": "\u51fa\u724c\u5fc5\u987b\u81f3\u5c11\u5305\u542b\u4e00\u5f20\u516c\u5171\u724c\uff0c\u4e09\u56de\u5408\u624b\u724c\u6570\u6539\u4e3a 3 / 4 / 5\u3002",
   "Score Battle choices now have two-minute timers and clearer scoring animations.": "\u79ef\u5206\u5bf9\u6218\u7684\u9009\u7279\u6548\u548c\u51fa\u724c\u65f6\u95f4\u6539\u4e3a 2 \u5206\u949f\uff0c\u5e76\u52a0\u5165\u66f4\u6e05\u6670\u7684\u8ba1\u5206\u52a8\u753b\u3002",
@@ -269,7 +284,8 @@ Object.assign(zhText, {
   "Chat messages must be 200 characters or fewer.": "聊天内容不能超过 200 字。",
   "Score Battle table chat is now available from the right panel.": "积分对战牌桌右侧面板已加入聊天栏。",
   "Balance tuning and scoring logic now count only cards that form the made hand, unless an effect adds bonus chips.": "平衡性和计分逻辑已调整：只有凑出牌型的牌计入基础点数，除非特定特效提供额外加成。",
-  "Persistent effects and each player's current crit rate are visible on the table.": "牌桌上现在会显示每位玩家的持续特效和当前暴击率。"
+  "Persistent effects and each player's current crit rate are visible on the table.": "牌桌上现在会显示每位玩家的持续特效和当前暴击率。",
+  "Tomatoes can now be thrown only during another player's turn in Score Battle.": "积分对战中，现在只能在其他玩家的出牌回合投掷番茄。"
 });
 
 Object.assign(zhText, {
@@ -360,6 +376,8 @@ const state = {
   battleScorePreview: null,
   battleScorePreviewKey: "",
   battleScorePreviewLoading: false,
+  battleAutoPlayBusy: false,
+  battleFateBusy: false,
   battleSelectionKey: "",
   battleCommunityKey: "",
   battleCommunityCards: [],
@@ -573,6 +591,9 @@ function avatarNode(src, name, className) {
 function canThrowTomato(mode, seat) {
   const table = mode === "score" ? state.scoreTable : state.table;
   if (!state.user || !table || !seat || seat.isYou || seat.left) return false;
+  if (mode === "score") {
+    return table.phase === "play-select" && Boolean(table.currentTurnSeatId) && table.currentTurnSeatId !== table.youSeatId;
+  }
   return Boolean(table.youSeatId);
 }
 
@@ -858,6 +879,8 @@ function clearCurrentScoreTable() {
   state.battleScorePreview = null;
   state.battleScorePreviewKey = "";
   state.battleScorePreviewLoading = false;
+  state.battleAutoPlayBusy = false;
+  state.battleFateBusy = false;
   state.battleCommunityKey = "";
   state.battleCommunityCards = [];
   state.battleCommunityAnimation = null;
@@ -1058,11 +1081,14 @@ function appendUpdateNotice() {
         el("button", { className: "ghost modal-close", type: "button", onclick: dismissUpdateNotice, "aria-label": t("Got it") }, ["x"])
       ]),
       el("ul", { className: "update-list" }, [
+        el("li", {}, [t("Round 1 now uses the required two-choice FATE build system.")]),
+        el("li", {}, [t("One-click play automatically submits the highest-scoring valid hand with your selected effect.")]),
         el("li", {}, [t("Password changes are available from Profile, and admin feedback is available from the main page.")]),
         el("li", {}, [t("Account popups now keep typed text while the table refreshes.")]),
         el("li", {}, [t("Score Battle table chat is now available from the right panel.")]),
         el("li", {}, [t("Balance tuning and scoring logic update.")]),
         el("li", {}, [t("Base scoring now only counts cards that form the made hand, unless a specific effect adds bonus chips.")]),
+        el("li", {}, [t("Tomatoes can now be thrown only during another player's turn in Score Battle.")]),
         el("li", {}, [t("Balance tuning and scoring logic now count only cards that form the made hand, unless an effect adds bonus chips.")]),
         el("li", {}, [t("Traditional card-table mode has been removed; the app now focuses on Score Battle.")]),
         el("li", {}, [t("New critical, discard, and comeback effects are available in Score Battle.")]),
@@ -1078,12 +1104,15 @@ function updateHistoryEntries() {
     {
       version: "0.0.6",
       items: [
+        "Round 1 now uses the required two-choice FATE build system.",
+        "One-click play automatically submits the highest-scoring valid hand with your selected effect.",
         "Password changes are available from Profile, and admin feedback is available from the main page.",
         "Account popups now keep typed text while the table refreshes.",
         "Score Battle hosts can now add CPU players.",
         "Score Battle table chat is now available from the right panel.",
         "Balance tuning and scoring logic update.",
         "Base scoring now only counts cards that form the made hand, unless a specific effect adds bonus chips.",
+        "Tomatoes can now be thrown only during another player's turn in Score Battle.",
         "Balance tuning and scoring logic now count only cards that form the made hand, unless an effect adds bonus chips.",
         "Persistent effects and each player's current crit rate are visible on the table.",
         "Traditional card-table mode has been removed; the app now focuses on Score Battle.",
@@ -1537,6 +1566,8 @@ function buildBattleRulesModal() {
             el("li", {}, [t("Round hand sizes refill to 3, 4, 5, 5, and 5 cards. Unplayed hand cards stay for the next round.")]),
             el("li", {}, [t("Played hand cards are removed for the rest of the game. Each player has four discard uses per game.")])
           ]),
+          el("h3", {}, ["FATE"]),
+          el("ul", { className: "update-list rules-effect-list" }, scoreFateRuleText().map((line) => el("li", {}, [line]))),
           el("h3", {}, [t("Effect cards")]),
           el("ul", { className: "update-list rules-effect-list" }, battleEffectRuleText().map((line) => el("li", {}, [line])))
         ])
@@ -1547,6 +1578,14 @@ function buildBattleRulesModal() {
       }, [t("Close")])
     ])
   ]);
+}
+
+function scoreFateRuleText() {
+  return ["giant", "dice", "big-short", "going-long", "fate-collector", "clod"]
+    .map((kind) => {
+      const fate = { kind };
+      return `${scoreFateName(fate)}: ${scoreFateDescription(fate)}`;
+    });
 }
 
 function scoreRuleRows() {
@@ -1756,12 +1795,16 @@ function battleCompleteRuleText() {
       "基础计分：高牌仅计最高牌；一对仅计对子；两对仅计两对；三条与四条仅计同点数牌；顺子、同花、葫芦、同花顺计全部五张。",
       "踢脚牌：未参与牌型的牌按自身点数 40%（向下取整）加入点数，合计最高 20；这些点数也可触发暴击。",
       "暴击：每张计分牌与有踢脚牌贡献的牌独立判定；仅当本回合暴击率大于 0% 且没有任何暴击时，最终得分额外 +100。",
+      "皇家同花顺：实际打出任意花色的 10、J、Q、K、A 同花顺时，无论当前回合数，立即赢得整局。",
+      "番茄投掷：积分对战中只能在其他玩家的出牌回合投掷番茄；自己的回合及回合结算阶段不能投掷。",
       "最终得分在完整计算后向下取整为整数。"
     ]
     : [
       "Base scoring: High Card scores only its highest card; One Pair, Two Pair, Three/Four of a Kind score only their made cards; Straight, Flush, Full House, and Straight Flush score all five.",
       "Kickers: cards outside the made hand add 40% of their chip value, rounded down, up to 20 total. Those contributions may crit.",
       "Crits: scoring cards and contributing kickers roll independently. Only a round with crit chance above 0% and no crit adds +100 final score.",
+      "Royal Flush: playing a same-suit 10, J, Q, K, and A immediately wins the entire game in any round.",
+      "Tomato throws: in Score Battle, tomatoes can be thrown only during another player's active turn, not during your own turn or round settlement.",
       "Final scores are floored to integers after the full calculation."
     ];
   return baseRules.concat(battleRuleEffectSamples().map((effect) => `${battleEffectName(effect)}: ${battleEffectDescription(effect)}`));
@@ -2556,9 +2599,34 @@ function renderScoreTable(table) {
         renderScoreRoundEffects(table)
       ])
     ]),
-    seatGrid
+    seatGrid,
+    renderScoreFateOverlay(table)
   );
   return felt;
+}
+
+function renderScoreFateOverlay(table) {
+  const you = (table.seats || []).find((seat) => seat.isYou);
+  if (!you?.requiresFateChoice || !(you.fateOptions || []).length) return "";
+  return el("div", { className: "fate-overlay", role: "dialog", "aria-modal": "true", "aria-labelledby": "fate-title" }, [
+    el("section", { className: "fate-choice-panel" }, [
+      el("div", { className: "fate-choice-head" }, [
+        el("span", { className: "fate-label" }, ["FATE"]),
+        el("h2", { id: "fate-title" }, [t("Choose one of two FATE cards")]),
+        el("p", {}, [t("FATE is required in round 1.")])
+      ]),
+      el("div", { className: "fate-choice-grid" }, (you.fateOptions || []).map((fate) => el("button", {
+        className: "fate-choice-card",
+        type: "button",
+        disabled: state.battleFateBusy,
+        onclick: () => chooseBattleFate(fate.id)
+      }, [
+        el("span", { className: "fate-card-label" }, ["FATE"]),
+        el("strong", {}, [scoreFateName(fate)]),
+        el("span", {}, [scoreFateDescription(fate)])
+      ])))
+    ])
+  ]);
 }
 
 function renderScoreRoundEffects(table) {
@@ -2661,13 +2729,16 @@ function renderScoreSeat(seat, index) {
       battleEffectName(seat.selectedEffect)
     ])
     : "";
+  const fate = renderScoreFateLine(seat);
   const persistentEffects = renderScorePersistentEffects(seat);
   const scorePreview = seat.isYou ? renderScorePreview() : "";
   const result = seat.lastResult
     ? el("div", { className: "battle-result" }, [
       el("strong", {}, [translateBattleHand(seat.lastResult.handName)]),
       el("span", {}, [`${t("Score")} ${seat.lastResult.score}`]),
-      seat.lastResult.automatic ? el("span", { className: "result-note" }, [t("Automatic")]) : "",
+      seat.lastResult.automatic ? el("span", { className: "result-note" }, [
+        seat.lastResult.automaticReason === "one-click" ? t("One-click play") : t("Automatic")
+      ]) : "",
       renderScoreResultCards(seat.lastResult)
     ])
     : "";
@@ -2690,11 +2761,34 @@ function renderScoreSeat(seat, index) {
       el("span", {}, [`${t("Score")} ${seat.roundScore || 0}`]),
       el("strong", {}, [`${t("Total")} ${seat.totalScore || 0}`])
     ]),
+    fate,
     selectedEffect,
     persistentEffects,
     actions,
     result,
     hand
+  ]);
+}
+
+function renderScoreFateLine(seat) {
+  const fate = seat.fate;
+  if (!fate) return "";
+  const details = [];
+  if (fate.kind === "dice") {
+    details.push(`x${fate.diceValue || "-"}`);
+    details.push(`${t("Dice")} ${fate.diceCount || 1}`);
+    details.push(`${t("Misfortune")} ${fate.misfortune || 0}/3`);
+  }
+  if (["big-short", "going-long"].includes(fate.kind)) {
+    if (fate.targetName) details.push(`${t("Target")}: ${fate.targetName}`);
+    details.push(`${t("Prediction streak")} ${fate.predictionStreak || 0}`);
+  }
+  if (fate.kind === "fate-collector") details.push(`${t("Collected hands")} ${fate.collectedHandCount || 0}/5`);
+  if (fate.kind === "giant" && fate.lastGiantPenalty) details.push(`-${fate.lastGiantPenalty}`);
+  return el("div", { className: "score-fate-line", title: scoreFateDescription(fate) }, [
+    el("span", { className: "fate-label compact" }, ["FATE"]),
+    el("strong", {}, [scoreFateName(fate)]),
+    details.length ? el("span", {}, [details.join(" | ")]) : ""
   ]);
 }
 
@@ -2752,8 +2846,10 @@ function renderScoreSeatActions(seat) {
   const selectedHandOnly = state.battleSelections.every((code) => handCodes.has(code));
   const selectedHasCommunity = state.battleSelections.some((code) => (table.community || []).some((card) => card.code === code));
   const canDiscard = seat.canDiscardThisRound && selectedCount >= 1 && selectedHandOnly;
-  const canPlay = selectedCount === 5 && selectedHasCommunity;
+  const fateReady = seat.fateChosen && (!["big-short", "going-long"].includes(seat.fate?.kind) || seat.fate?.targetSeatId);
+  const canPlay = fateReady && selectedCount === 5 && selectedHasCommunity;
   return el("div", { className: "score-seat-actions" }, [
+    renderScoreFateControls(seat, table),
     el("div", { className: "hint-line" }, [
       `${t("Selected cards")}: ${selectedCount}/5`,
       selectedCount === 5 && !selectedHasCommunity ? ` | ${t("Must include community card")}` : "",
@@ -2771,8 +2867,47 @@ function renderScoreSeatActions(seat) {
         disabled: !canPlay,
         onclick: submitBattlePlay
       }, [`${t("Submit play")} ${selectedCount}/5`])
-    ])
+    ]),
+    el("button", {
+      className: "score-one-click-play",
+      type: "button",
+      disabled: !seat.canAutoPlay || state.battleAutoPlayBusy,
+      onclick: autoPlayBattleHand
+    }, [state.battleAutoPlayBusy ? t("Choosing best play") : t("One-click play")])
   ]);
+}
+
+function renderScoreFateControls(seat, table) {
+  const fate = seat.fate;
+  if (!fate) return el("div", { className: "fate-required-note" }, [t("Choose one FATE before playing.")]);
+  if (fate.kind === "dice") {
+    const rolls = (fate.diceRolls || []).map((roll) => `x${roll}`).join(", ") || "-";
+    return el("div", { className: "fate-turn-controls" }, [
+      el("div", { className: "fate-dice-status" }, [
+        el("strong", {}, [`${scoreFateName(fate)}: x${fate.diceValue || "-"}`]),
+        el("span", {}, [`${t("Rolls left")}: ${fate.diceRollsLeft || 0} | ${t("Misfortune")}: ${fate.misfortune || 0}/3 | ${rolls}`])
+      ]),
+      el("button", {
+        className: "fate-roll-button",
+        type: "button",
+        disabled: !seat.canRollFateDice || state.battleFateBusy,
+        onclick: rollBattleFateDice
+      }, [t("Roll dice")])
+    ]);
+  }
+  if (["big-short", "going-long"].includes(fate.kind)) {
+    const targets = (table.seats || []).filter((entry) => entry.inGame && !entry.left && !entry.isYou);
+    return el("div", { className: "fate-turn-controls fate-target-controls" }, [
+      el("strong", {}, [t("Choose prediction target")]),
+      el("div", { className: "fate-target-grid" }, targets.map((target) => el("button", {
+        className: fate.targetSeatId === target.seatId ? "is-selected" : "secondary",
+        type: "button",
+        disabled: state.battleFateBusy,
+        onclick: () => chooseBattleFateTarget(target.seatId)
+      }, [target.displayName])))
+    ]);
+  }
+  return "";
 }
 
 function renderScorePreview() {
@@ -3180,6 +3315,9 @@ function battleScorePreviewKey() {
   if (!table) return "";
   const you = table.seats.find((seat) => seat.isYou);
   if (!you || !you.inGame || !you.isScoreTurn || you.submitted || table.phase !== "play-select") return "";
+  if (!you.fateChosen || !you.fate) return "";
+  if (["big-short", "going-long"].includes(you.fate.kind) && !you.fate.targetSeatId) return "";
+  if (you.fate.kind === "dice" && !you.fate.diceValue) return "";
   if (state.battleEffectTarget || state.battleSelections.length !== 5) return "";
   const selectedHasCommunity = state.battleSelections.some((code) => (table.community || []).some((card) => card.code === code));
   if (!selectedHasCommunity) return "";
@@ -3187,7 +3325,8 @@ function battleScorePreviewKey() {
   const communityKey = (table.community || []).map((card) => `${card.code}:${card.displayCode || card.code}`).join(",");
   const effectKey = you.selectedEffect ? `${you.selectedEffect.id || ""}:${you.selectedEffect.kind || ""}` : "no-effect";
   const roundEffectKey = (table.roundEffects || []).map((effect) => `${effect.kind}:${effect.suit || ""}:${effect.amount || ""}`).join(",");
-  return `${table.id}:${table.gameNumber}:${table.round}:${table.currentTurnSeatId}:${state.battleSelections.join("-")}:${effectKey}:${roundEffectKey}:${handKey}:${communityKey}`;
+  const fateKey = `${you.fate.kind}:${you.fate.diceValue || ""}:${you.fate.targetSeatId || ""}`;
+  return `${table.id}:${table.gameNumber}:${table.round}:${table.currentTurnSeatId}:${state.battleSelections.join("-")}:${effectKey}:${fateKey}:${roundEffectKey}:${handKey}:${communityKey}`;
 }
 
 async function requestBattleScorePreview() {
@@ -3277,6 +3416,38 @@ function translateBattleHand(handName) {
   return isZh() ? (zhText[handName] || handName) : handName;
 }
 
+function scoreFateName(fate) {
+  const names = {
+    giant: isZh() ? "巨人" : "The Giant",
+    dice: isZh() ? "骰子" : "The Dice",
+    "big-short": isZh() ? "大空头" : "The Big Short",
+    "going-long": isZh() ? "做多" : "Going Long",
+    "fate-collector": isZh() ? "收藏家" : "The Collector",
+    clod: isZh() ? "土块" : "The Clod"
+  };
+  return names[fate?.kind] || fate?.name || "FATE";
+}
+
+function scoreFateDescription(fate) {
+  const kind = fate?.kind;
+  if (isZh()) {
+    if (kind === "giant") return "开局获得 3500 总分；第 2-5 回合不能选择普通特效。每回合结算后总分扣除 max(最低回合分×1.5, 最高回合分×65%)，最低扣至 0。每局最多一位巨人。";
+    if (kind === "dice") return "每回合掷非六面骰，以本回合最大结果替换基础牌型倍率，普通特效倍率继续加算。初始 1 枚骰子，特定重发/镜像特效会永久增加骰子；每三次掷出 x3 获得一次额外投掷。概率：x3 18%、x4 21%、x5 21%、x6 15%、x7 9%、x8 7%、x10 4%、x12 2.5%、x15 1.5%、x20 1%。";
+    if (kind === "big-short") return "每回合出牌前做空另一位玩家，使其本回合得分依次 -20/-50/-80/-100/-150。若目标结算时为最低分，你获得 50/100/150/200/300，并按连续预测正确次数再获得 0/50/100/300/500。";
+    if (kind === "going-long") return "每回合出牌前做多另一位玩家，使其本回合得分依次 +20/+50/+80/+100/+150。若目标结算时为最高分，你获得 50/100/150/200/300，并按连续预测正确次数再获得 0/50/100/300/500。";
+    if (kind === "fate-collector") return "五回合内第一次打出一种自己此前未打出的牌型时，按第 1/2/3/4/5 种分别获得 +20/+80/+150/+250/+350 回合分。";
+    if (kind === "clod") return "第 1/2/3/4/5 回合手牌上限改为 5/6/7/7/7，并且每回合额外获得 1 次弃牌机会。";
+  } else {
+    if (kind === "giant") return "Start with 3,500 total score and choose no normal effects in rounds 2-5. After each round, lose the greater of 1.5x the lowest round score or 65% of the highest, down to zero. Only one Giant per game.";
+    if (kind === "dice") return "Roll a custom die each round and replace the base hand multiplier with your highest roll; normal effect multipliers are added afterward. Start with one die, gain permanent dice from specified reroll/mirror effects, and earn an extra roll after every three x3 results. Odds: x3 18%, x4 21%, x5 21%, x6 15%, x7 9%, x8 7%, x10 4%, x12 2.5%, x15 1.5%, x20 1%.";
+    if (kind === "big-short") return "Short another player before each play, reducing their round score by 20/50/80/100/150. If they finish lowest, gain 50/100/150/200/300 plus a 0/50/100/300/500 bonus for a 1-5 prediction streak.";
+    if (kind === "going-long") return "Go long another player before each play, increasing their round score by 20/50/80/100/150. If they finish highest, gain 50/100/150/200/300 plus a 0/50/100/300/500 bonus for a 1-5 prediction streak.";
+    if (kind === "fate-collector") return "The first time you play each new hand type, gain 20/80/150/250/350 round score for your 1st-5th collected type.";
+    if (kind === "clod") return "Your hand sizes become 5/6/7/7/7 in rounds 1-5, and you gain one extra discard use each round.";
+  }
+  return "";
+}
+
 function battleEffectName(effect) {
   const suit = battleSuitName(effect.suit);
   if (effect.kind === "suit-chip") return isZh() ? `${suit}\u70b9\u6570\u589e\u5f3a` : `${suit} chip boost`;
@@ -3323,6 +3494,12 @@ function battleEffectName(effect) {
   if (effect.kind === "dance-illusions") return isZh() ? "\u5e7b\u5f71\u4e4b\u821e" : "Dance of Illusions";
   if (effect.kind === "no-critical-hit") return isZh() ? "\u672a\u89e6\u53d1\u66b4\u51fb" : "No critical hit";
   if (effect.kind === "rambo") return isZh() ? "\u7ea2\u6e29\u706b\u70e4" : "Rambo";
+  if (effect.kind === "fate-collector") return scoreFateName(effect);
+  if (effect.kind === "big-short") return scoreFateName(effect);
+  if (effect.kind === "going-long") return scoreFateName(effect);
+  if (effect.kind === "big-short-target") return isZh() ? "做空目标" : "Short target";
+  if (effect.kind === "going-long-target") return isZh() ? "做多目标" : "Long target";
+  if (effect.kind === "giant-penalty") return isZh() ? "巨人负担" : "Giant burden";
   return effect.kind || "";
 }
 
@@ -3448,22 +3625,20 @@ function battleBalanceEffectDescription(effect) {
     : "Astral Body penalty: this round's total score is reduced to 70%/60%/50% by round.";
   if (effect.kind === "tomato-king") {
     const hits = Math.max(0, Number(effect.tomatoHits) || 0);
-    const bonus = hits * 5;
     return isZh()
-      ? `\u672c\u56de\u5408\u500d\u7387 +1\uff1b\u624b\u724c\u6309\u724c\u578b\u500d\u7387\u7ed3\u7b97\u540e\uff0c\u6700\u7ec8\u5206\u989d\u5916 +${bonus}\uff08\u6b64\u524d\u88ab\u547d\u4e2d ${hits} \u6b21 \u00d75\uff09\u3002\u6bcf\u5c40\u4e00\u6b21\u3002`
-      : `This round gains +1 mult; after hand scoring, add +${bonus} final score (${hits} earlier hits x5). Once per game.`;
+      ? `\u672c\u56de\u5408\u500d\u7387 +1\uff1b\u624b\u724c\u7ed3\u7b97\u540e\uff0c\u6b64\u524d\u88ab\u547d\u4e2d ${hits} \u6b21 \u00d7 min(\u672c\u6b21\u724c\u578b\u57fa\u7840\u500d\u7387, 2) \u52a0\u5165\u6700\u7ec8\u5206\u3002\u6bcf\u5c40\u4e00\u6b21\u3002`
+      : `This round gains +1 mult; after hand scoring, add ${hits} earlier hits x min(base hand multiplier, 2) to final score. Once per game.`;
   }
   if (effect.kind === "tomato-shooter") {
     const throws = Math.max(0, Number(effect.tomatoThrows) || 0);
-    const bonus = throws * 5;
     return isZh()
-      ? `\u672c\u56de\u5408\u500d\u7387 +1\uff1b\u624b\u724c\u6309\u724c\u578b\u500d\u7387\u7ed3\u7b97\u540e\uff0c\u6700\u7ec8\u5206\u989d\u5916 +${bonus}\uff08\u6b64\u524d\u6295\u63b7 ${throws} \u6b21 \u00d75\uff09\u3002\u6bcf\u5c40\u4e00\u6b21\u3002`
-      : `This round gains +1 mult; after hand scoring, add +${bonus} final score (${throws} earlier throws x5). Once per game.`;
+      ? `\u672c\u56de\u5408\u500d\u7387 +1\uff1b\u624b\u724c\u7ed3\u7b97\u540e\uff0c\u6b64\u524d\u6295\u63b7 ${throws} \u6b21 \u00d7 min(\u672c\u6b21\u724c\u578b\u57fa\u7840\u500d\u7387, 2) \u52a0\u5165\u6700\u7ec8\u5206\u3002\u6bcf\u5c40\u4e00\u6b21\u3002`
+      : `This round gains +1 mult; after hand scoring, add ${throws} earlier throws x min(base hand multiplier, 2) to final score. Once per game.`;
   }
   if (effect.kind === "tempered-tomato") {
     return isZh()
-      ? "\u6301\u7eed\u5224\u5b9a\u756a\u8304\u9608\u503c\uff1b\u8fbe\u6807\u540e\u6bcf\u56de\u5408\u5728\u624b\u724c\u7ed3\u7b97\u540e\u989d\u5916\u52a0\u5165\uff08\u547d\u4e2d\u00d70.5 + \u6295\u63b7\u00d70.2\uff09\u00d75 \u6700\u7ec8\u5206\u3002\u6bcf\u5c40\u4e00\u6b21\u3002"
-      : "Continuously checks tomato thresholds; once active, after hand scoring add (hits x0.5 + throws x0.2) x5 final score each round. Once per game.";
+      ? "\u6301\u7eed\u5224\u5b9a\u756a\u8304\u9608\u503c\uff1b\u8fbe\u6807\u540e\u6bcf\u56de\u5408\u5728\u624b\u724c\u7ed3\u7b97\u540e\u989d\u5916\u52a0\u5165\uff08\u547d\u4e2d\u00d70.5 + \u6295\u63b7\u00d70.2\uff09\u00d7 min(\u672c\u6b21\u724c\u578b\u57fa\u7840\u500d\u7387, 2) \u6700\u7ec8\u5206\u3002\u6bcf\u5c40\u4e00\u6b21\u3002"
+      : "Continuously checks tomato thresholds; once active, after hand scoring add (hits x0.5 + throws x0.2) x min(base hand multiplier, 2) final score each round. Once per game.";
   }
   if (effect.kind === "dance-illusions") {
     return isZh()
@@ -3954,6 +4129,57 @@ async function chooseBattleEffect(effectId, target = {}) {
   render();
 }
 
+async function chooseBattleFate(fateId) {
+  if (!state.scoreTable || state.battleFateBusy) return;
+  state.battleFateBusy = true;
+  render();
+  try {
+    const response = await api(`/api/score-tables/${state.scoreTable.id}/fate`, {
+      method: "POST",
+      body: { fateId }
+    });
+    setCurrentScoreTable(response.table);
+  } catch (error) {
+    state.error = error.message;
+  } finally {
+    state.battleFateBusy = false;
+  }
+  render();
+}
+
+async function rollBattleFateDice() {
+  if (!state.scoreTable || state.battleFateBusy) return;
+  state.battleFateBusy = true;
+  render();
+  try {
+    const response = await api(`/api/score-tables/${state.scoreTable.id}/fate-roll`, { method: "POST" });
+    setCurrentScoreTable(response.table);
+  } catch (error) {
+    state.error = error.message;
+  } finally {
+    state.battleFateBusy = false;
+  }
+  render();
+}
+
+async function chooseBattleFateTarget(targetSeatId) {
+  if (!state.scoreTable || state.battleFateBusy) return;
+  state.battleFateBusy = true;
+  render();
+  try {
+    const response = await api(`/api/score-tables/${state.scoreTable.id}/fate-target`, {
+      method: "POST",
+      body: { targetSeatId }
+    });
+    setCurrentScoreTable(response.table);
+  } catch (error) {
+    state.error = error.message;
+  } finally {
+    state.battleFateBusy = false;
+  }
+  render();
+}
+
 async function discardBattleCards() {
   if (!state.scoreTable || state.battleSelections.length === 0) return;
   try {
@@ -3985,6 +4211,25 @@ async function submitBattlePlay() {
     await refreshScoreTables(false);
   } catch (error) {
     state.error = error.message;
+  }
+  render();
+}
+
+async function autoPlayBattleHand() {
+  if (!state.scoreTable || state.battleAutoPlayBusy) return;
+  state.battleAutoPlayBusy = true;
+  state.battleSelections = [];
+  state.battleScorePreview = null;
+  state.battleScorePreviewKey = "";
+  render();
+  try {
+    const response = await api(`/api/score-tables/${state.scoreTable.id}/auto-play`, { method: "POST" });
+    setCurrentScoreTable(response.table);
+    await refreshScoreTables(false);
+  } catch (error) {
+    state.error = error.message;
+  } finally {
+    state.battleAutoPlayBusy = false;
   }
   render();
 }

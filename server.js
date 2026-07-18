@@ -71,6 +71,28 @@ const SCORE_BATTLE_ONCE_PER_GAME_EFFECTS = new Set([
   "critical-switch-hand",
   "dance-illusions"
 ]);
+const SCORE_BATTLE_FATES = [
+  { kind: "giant", name: "The Giant" },
+  { kind: "dice", name: "The Dice" },
+  { kind: "big-short", name: "The Big Short" },
+  { kind: "going-long", name: "Going Long" },
+  { kind: "fate-collector", name: "The Collector" },
+  { kind: "clod", name: "The Clod" }
+];
+const SCORE_BATTLE_DICE_EFFECTS = new Set([
+  "void-erosion",
+  "refresher-orb",
+  "world-mirror",
+  "man-mirror",
+  "goelia",
+  "shadow-targeting",
+  "chaos-dice"
+]);
+const SCORE_BATTLE_FATE_TARGET_ADJUSTMENTS = [0, 20, 50, 80, 100, 150];
+const SCORE_BATTLE_FATE_PREDICTION_BONUSES = [0, 50, 100, 150, 200, 300];
+const SCORE_BATTLE_FATE_STREAK_BONUSES = [0, 0, 50, 100, 300, 500];
+const SCORE_BATTLE_FATE_COLLECTOR_BONUSES = [0, 20, 80, 150, 250, 350];
+const SCORE_BATTLE_CLOD_HAND_SIZES = [0, 5, 6, 7, 7, 7];
 
 const sessions = new Map();
 const tables = new Map();
@@ -615,6 +637,38 @@ async function handleApi(req, res, url, method) {
       return;
     }
 
+    if (method === "POST" && pathParts[3] === "fate") {
+      const body = await readJsonBody(req);
+      const result = chooseScoreFate(table, user.id, body.fateId);
+      if (!result.ok) {
+        sendJson(res, 400, { error: result.error });
+        return;
+      }
+      sendJson(res, 200, { table: scoreTableView(table, user) });
+      return;
+    }
+
+    if (method === "POST" && pathParts[3] === "fate-roll") {
+      const result = rollScoreFateDice(table, user.id);
+      if (!result.ok) {
+        sendJson(res, 400, { error: result.error });
+        return;
+      }
+      sendJson(res, 200, { table: scoreTableView(table, user), roll: result.roll });
+      return;
+    }
+
+    if (method === "POST" && pathParts[3] === "fate-target") {
+      const body = await readJsonBody(req);
+      const result = chooseScoreFateTarget(table, user.id, body.targetSeatId);
+      if (!result.ok) {
+        sendJson(res, 400, { error: result.error });
+        return;
+      }
+      sendJson(res, 200, { table: scoreTableView(table, user) });
+      return;
+    }
+
     if (method === "POST" && pathParts[3] === "discard") {
       const body = await readJsonBody(req);
       const result = discardScoreCards(table, user.id, body.cardCodes);
@@ -629,6 +683,17 @@ async function handleApi(req, res, url, method) {
     if (method === "POST" && pathParts[3] === "play") {
       const body = await readJsonBody(req);
       const result = submitScorePlay(table, user.id, body.cardCodes);
+      if (!result.ok) {
+        sendJson(res, 400, { error: result.error });
+        return;
+      }
+      processScoreBots(table);
+      sendJson(res, 200, { table: scoreTableView(table, user) });
+      return;
+    }
+
+    if (method === "POST" && pathParts[3] === "auto-play") {
+      const result = submitBestScorePlay(table, user.id);
       if (!result.ok) {
         sendJson(res, 400, { error: result.error });
         return;
@@ -1916,6 +1981,7 @@ function createScoreTable(rawName, user) {
     tomatoBuckets: Object.create(null),
     scoreTomatoHits: [],
     historyRecorded: false,
+    giantFateSeatId: null,
     results: [],
     chat: [],
     messages: [`${user.username} opened a score battle table.`]
@@ -1963,6 +2029,17 @@ function createScoreSeatState(options) {
     effectChosen: false,
     usedEffectKinds: [],
     persistentEffects: {},
+    fateOptions: [],
+    fate: null,
+    fateChosen: false,
+    fateDiceCount: 0,
+    fateDiceRolls: [],
+    fateDiceRollsLeft: 0,
+    fateDiceValue: null,
+    fateMisfortune: 0,
+    fateTargetSeatId: null,
+    fatePredictionStreak: 0,
+    fateCollectedHandIds: [],
     submitted: false,
     roundScore: 0,
     totalScore: 0,
@@ -2090,6 +2167,7 @@ function startScoreBattle(table) {
   table.burnedCards = [];
   table.scoreTomatoHits = [];
   table.historyRecorded = false;
+  table.giantFateSeatId = null;
   table.standings = [];
   table.results = [];
   for (const seat of table.seats) {
@@ -2103,6 +2181,17 @@ function startScoreBattle(table) {
     seat.effectChosen = false;
     seat.usedEffectKinds = [];
     seat.persistentEffects = {};
+    seat.fateOptions = [];
+    seat.fate = null;
+    seat.fateChosen = false;
+    seat.fateDiceCount = 0;
+    seat.fateDiceRolls = [];
+    seat.fateDiceRollsLeft = 0;
+    seat.fateDiceValue = null;
+    seat.fateMisfortune = 0;
+    seat.fateTargetSeatId = null;
+    seat.fatePredictionStreak = 0;
+    seat.fateCollectedHandIds = [];
     seat.submitted = false;
     seat.roundScore = 0;
     seat.totalScore = 0;
@@ -2127,13 +2216,21 @@ function beginScoreBattleRound(table) {
     table.roundStartTotals[seat.seatId] = Number(seat.totalScore) || 0;
   }
   for (const seat of activeScoreSeats(table)) {
-    topUpScoreHand(table, seat, scoreRoundHandSize(table.round));
+    topUpScoreHand(table, seat, scoreHandSizeForSeat(table, seat));
+    if (table.round > 1 && seat.fate?.kind === "clod") {
+      seat.discardUsesLeft = Math.max(0, Number(seat.discardUsesLeft) || 0) + 1;
+    }
     seat.selectedEffect = null;
     seat.effectChosen = false;
     seat.submitted = false;
     seat.roundScore = 0;
     seat.lastResult = null;
-    seat.effectOptions = table.round >= 2 && !seat.persistentEffects?.returningFundamentals
+    seat.fateOptions = [];
+    seat.fateTargetSeatId = null;
+    seat.fateLastPredictionCorrect = null;
+    seat.fateLastGiantPenalty = 0;
+    resetScoreFateDiceRound(seat);
+    seat.effectOptions = table.round >= 2 && seat.fate?.kind !== "giant" && !seat.persistentEffects?.returningFundamentals
       ? scoreBattle.createEffectOptions({ excludedKinds: seat.usedEffectKinds || [], round: table.round })
       : [];
   }
@@ -2147,6 +2244,13 @@ function beginScoreBattleRound(table) {
 
 function scoreRoundHandSize(round) {
   return Math.min(5, round + 2);
+}
+
+function scoreHandSizeForSeat(table, seat) {
+  if (seat?.fate?.kind === "clod") {
+    return SCORE_BATTLE_CLOD_HAND_SIZES[Math.max(1, Math.min(SCORE_BATTLE_ROUNDS, Number(table.round) || 1))];
+  }
+  return scoreRoundHandSize(table.round);
 }
 
 function dealScoreCommunity(table) {
@@ -2264,6 +2368,167 @@ function scoreEffectLogName(effect) {
   return names[effect.kind] || effect.kind;
 }
 
+function ensureScoreFateOptions(table, seat) {
+  if (!seat || table.round !== 1 || seat.fateChosen || (seat.fateOptions || []).length) return;
+  const available = SCORE_BATTLE_FATES.filter((fate) => fate.kind !== "giant" || !table.giantFateSeatId);
+  seat.fateOptions = scoreBattle.shuffle(available).slice(0, 2).map((fate) => ({
+    ...fate,
+    id: crypto.randomBytes(6).toString("hex")
+  }));
+}
+
+function chooseScoreFate(table, userId, fateId) {
+  if (table.phase !== "play-select" || table.round !== 1) {
+    return { ok: false, error: "FATE can only be chosen during your first-round turn." };
+  }
+  const seat = activeScoreSeats(table).find((entry) => !isScoreBotSeat(entry) && entry.userId === userId);
+  if (!seat) return { ok: false, error: "You are watching this score battle." };
+  return chooseScoreFateForSeat(table, seat, fateId);
+}
+
+function chooseScoreFateForSeat(table, seat, fateId) {
+  if (table.phase !== "play-select" || table.round !== 1) {
+    return { ok: false, error: "FATE can only be chosen during the first round." };
+  }
+  if (!isCurrentScoreTurn(table, seat)) return { ok: false, error: "Wait for your turn to choose FATE." };
+  if (seat.fateChosen) return { ok: false, error: "You already chose your FATE." };
+  ensureScoreFateOptions(table, seat);
+  const fate = (seat.fateOptions || []).find((entry) => entry.id === String(fateId || ""));
+  if (!fate) return { ok: false, error: "Choose one of your two FATE cards." };
+  if (fate.kind === "giant" && table.giantFateSeatId && table.giantFateSeatId !== seat.seatId) {
+    return { ok: false, error: "Another player has already chosen The Giant." };
+  }
+
+  seat.fate = { kind: fate.kind, name: fate.name };
+  seat.fateChosen = true;
+  seat.fateOptions = [];
+  if (fate.kind === "giant") {
+    table.giantFateSeatId = seat.seatId;
+    seat.totalScore += 3500;
+  } else if (fate.kind === "dice") {
+    seat.fateDiceCount = 1;
+    resetScoreFateDiceRound(seat);
+  } else if (fate.kind === "clod") {
+    topUpScoreHand(table, seat, SCORE_BATTLE_CLOD_HAND_SIZES[1]);
+    seat.discardUsesLeft = Math.max(0, Number(seat.discardUsesLeft) || 0) + 1;
+  }
+  table.messages.unshift(`${seat.displayName} chose FATE: ${fate.name}.`);
+  return { ok: true };
+}
+
+function resetScoreFateDiceRound(seat) {
+  seat.fateDiceRolls = [];
+  seat.fateDiceValue = null;
+  seat.fateDiceRollsLeft = seat.fate?.kind === "dice"
+    ? Math.max(1, Number(seat.fateDiceCount) || 1)
+    : 0;
+}
+
+function rollScoreFateDice(table, userId) {
+  const seat = activeScoreSeats(table).find((entry) => !isScoreBotSeat(entry) && entry.userId === userId);
+  if (!seat) return { ok: false, error: "You are watching this score battle." };
+  return rollScoreFateDiceForSeat(table, seat);
+}
+
+function rollScoreFateDiceForSeat(table, seat) {
+  if (!isCurrentScoreTurn(table, seat)) return { ok: false, error: "Wait for your turn to roll The Dice." };
+  if (seat.fate?.kind !== "dice") return { ok: false, error: "Your FATE does not use dice." };
+  if (seat.fateDiceRollsLeft <= 0) return { ok: false, error: "You have no FATE dice rolls left this round." };
+  const roll = scoreBattle.fateDiceValueForRoll(crypto.randomInt(1000000) / 1000000);
+  seat.fateDiceRollsLeft -= 1;
+  seat.fateDiceRolls = Array.isArray(seat.fateDiceRolls) ? seat.fateDiceRolls : [];
+  seat.fateDiceRolls.push(roll);
+  seat.fateDiceValue = Math.max(Number(seat.fateDiceValue) || 0, roll);
+  if (roll === 3) {
+    seat.fateMisfortune = Math.max(0, Number(seat.fateMisfortune) || 0) + 1;
+    if (seat.fateMisfortune >= 3) {
+      seat.fateMisfortune -= 3;
+      seat.fateDiceRollsLeft += 1;
+      table.messages.unshift(`${seat.displayName}'s Misfortune granted one extra FATE roll.`);
+    }
+  }
+  table.messages.unshift(`${seat.displayName} rolled x${roll} with The Dice.`);
+  return { ok: true, roll };
+}
+
+function chooseScoreFateTarget(table, userId, targetSeatId) {
+  const seat = activeScoreSeats(table).find((entry) => !isScoreBotSeat(entry) && entry.userId === userId);
+  if (!seat) return { ok: false, error: "You are watching this score battle." };
+  return chooseScoreFateTargetForSeat(table, seat, targetSeatId);
+}
+
+function chooseScoreFateTargetForSeat(table, seat, targetSeatId) {
+  if (!isCurrentScoreTurn(table, seat)) return { ok: false, error: "Wait for your turn to choose a FATE target." };
+  if (!scoreFateNeedsTarget(seat)) return { ok: false, error: "Your FATE does not choose another player." };
+  const target = activeScoreSeats(table).find((entry) => entry.seatId === String(targetSeatId || "") && entry.seatId !== seat.seatId);
+  if (!target) return { ok: false, error: "Choose another active player as your FATE target." };
+  seat.fateTargetSeatId = target.seatId;
+  table.messages.unshift(`${seat.displayName} marked ${target.displayName} for ${seat.fate.name}.`);
+  return { ok: true };
+}
+
+function scoreFateNeedsTarget(seat) {
+  return ["big-short", "going-long"].includes(seat?.fate?.kind);
+}
+
+function scoreFateReadyForPlay(seat) {
+  if (!seat?.fateChosen || !seat.fate) return { ok: false, error: "Choose one FATE before playing." };
+  if (scoreFateNeedsTarget(seat) && !seat.fateTargetSeatId) {
+    return { ok: false, error: `Choose a player for ${seat.fate.name} before playing.` };
+  }
+  if (seat.fate.kind === "dice" && !hasScoreFateDiceValue(seat)) {
+    return { ok: false, error: "Roll The Dice before previewing or playing." };
+  }
+  return { ok: true };
+}
+
+function hasScoreFateDiceValue(seat) {
+  return Number.isFinite(Number(seat?.fateDiceValue)) && Number(seat.fateDiceValue) > 0;
+}
+
+function rollRemainingScoreFateDice(table, seat) {
+  while (seat.fate?.kind === "dice" && seat.fateDiceRollsLeft > 0) {
+    const result = rollScoreFateDiceForSeat(table, seat);
+    if (!result.ok) return result;
+  }
+  return { ok: true };
+}
+
+function prepareScoreFateForPlay(table, seat, options = {}) {
+  if (!seat.fateChosen || !seat.fate) {
+    if (!options.autoChooseFate) return { ok: false, error: "Choose one FATE before playing." };
+    chooseScoreBotFate(table, seat);
+  }
+  if (scoreFateNeedsTarget(seat) && !seat.fateTargetSeatId) {
+    if (!options.autoChooseTarget) return { ok: false, error: `Choose a player for ${seat.fate.name} before playing.` };
+    chooseScoreAutomaticFateTarget(table, seat);
+  }
+  if (seat.fate?.kind === "dice") {
+    if (options.rollAllDice || !hasScoreFateDiceValue(seat)) {
+      const rolled = rollRemainingScoreFateDice(table, seat);
+      if (!rolled.ok) return rolled;
+    }
+  }
+  return scoreFateReadyForPlay(seat);
+}
+
+function chooseScoreBotFate(table, seat) {
+  if (!seat || seat.fateChosen) return;
+  ensureScoreFateOptions(table, seat);
+  const options = scoreBattle.shuffle(seat.fateOptions || []);
+  if (options.length) chooseScoreFateForSeat(table, seat, options[0].id);
+}
+
+function chooseScoreAutomaticFateTarget(table, seat) {
+  const candidates = activeScoreSeats(table).filter((entry) => entry.seatId !== seat.seatId);
+  if (!candidates.length) return;
+  candidates.sort((left, right) => {
+    const direction = seat.fate?.kind === "going-long" ? -1 : 1;
+    return direction * ((Number(left.totalScore) || 0) - (Number(right.totalScore) || 0));
+  });
+  chooseScoreFateTargetForSeat(table, seat, candidates[0].seatId);
+}
+
 function chooseScoreEffect(table, userId, effectId, payload = {}) {
   if (table.phase !== "play-select") return { ok: false, error: "Effects can only be selected while choosing a play." };
   const seat = activeScoreSeats(table).find((entry) => !isScoreBotSeat(entry) && entry.userId === userId);
@@ -2286,6 +2551,7 @@ function chooseScoreEffectForSeat(table, seat, effectId, payload = {}) {
   if (SCORE_BATTLE_ONCE_PER_GAME_EFFECTS.has(effect.kind)) {
     seat.usedEffectKinds = Array.from(new Set([...(seat.usedEffectKinds || []), effect.kind]));
   }
+  grantScoreFateDieForEffect(table, seat, effect.kind);
   table.messages.unshift(`${seat.displayName} used ${scoreEffectLogName(effect)}.`);
   return { ok: true };
 }
@@ -2327,8 +2593,16 @@ function scoreContextForSeat(table, seat, options = {}) {
     highestTotalScoreBeforeRound: highestStartTotal,
     turnElapsedMs: options.turnElapsedMs ?? (Date.now() - (table.turnStartedAt || Date.now())),
     criticalExpected: Boolean(options.criticalExpected),
-    criticalRolls: Array.isArray(options.criticalRolls) ? options.criticalRolls : []
+    criticalRolls: Array.isArray(options.criticalRolls) ? options.criticalRolls : [],
+    baseMultiplierOverride: seat.fate?.kind === "dice" ? seat.fateDiceValue : undefined
   };
+}
+
+function grantScoreFateDieForEffect(table, seat, effectKind) {
+  if (seat?.fate?.kind !== "dice" || !SCORE_BATTLE_DICE_EFFECTS.has(effectKind)) return;
+  seat.fateDiceCount = Math.max(1, Number(seat.fateDiceCount) || 1) + 1;
+  seat.fateDiceRollsLeft = Math.max(0, Number(seat.fateDiceRollsLeft) || 0) + 1;
+  table.messages.unshift(`${seat.displayName} gained one permanent FATE die from ${scoreEffectLogName({ kind: effectKind })}.`);
 }
 
 function scoreTomatoCountsForSeat(table, seat) {
@@ -2611,6 +2885,7 @@ function startScoreTurn(table, seat) {
   table.currentTurnSeatId = seat.seatId;
   table.turnStartedAt = Date.now();
   table.phaseDeadline = Date.now() + SCORE_BATTLE_PLAY_SECONDS * 1000;
+  ensureScoreFateOptions(table, seat);
   table.messages.unshift(`Round ${table.round}: ${seat.displayName}'s turn.`);
 }
 
@@ -2653,6 +2928,8 @@ function submitScorePlay(table, userId, rawCodes) {
   if (!seat) return { ok: false, error: "You are watching this score battle." };
   if (!isCurrentScoreTurn(table, seat)) return { ok: false, error: "Wait for your turn to play cards." };
   if (seat.submitted) return { ok: false, error: "You already submitted this round." };
+  const fateReady = prepareScoreFateForPlay(table, seat);
+  if (!fateReady.ok) return fateReady;
   const codes = normalizeScoreCardCodes(rawCodes);
   if (codes.length !== 5) return { ok: false, error: "Choose exactly five cards to play." };
   const available = seat.hand.concat(table.community);
@@ -2667,12 +2944,32 @@ function submitScorePlay(table, userId, rawCodes) {
   return { ok: true };
 }
 
+function submitBestScorePlay(table, userId) {
+  if (table.phase !== "play-select") return { ok: false, error: "Plays are not being selected now." };
+  const seat = activeScoreSeats(table).find((entry) => !isScoreBotSeat(entry) && entry.userId === userId);
+  if (!seat) return { ok: false, error: "You are watching this score battle." };
+  if (!isCurrentScoreTurn(table, seat)) return { ok: false, error: "Wait for your turn to play cards." };
+  if (seat.submitted) return { ok: false, error: "You already submitted this round." };
+  const fateReady = prepareScoreFateForPlay(table, seat);
+  if (!fateReady.ok) return fateReady;
+  const scoringEffect = scoreEffectForSeat(table, seat);
+  const best = scoreBattle.findBestPlay(seat.hand, table.community, scoringEffect, {
+    ...scoreContextForSeat(table, seat, { criticalExpected: true }),
+    requireCommunity: true
+  });
+  recordScorePlay(table, seat, best.cards, "one-click");
+  maybeAdvanceScoreBattle(table);
+  return { ok: true };
+}
+
 function previewScorePlay(table, userId, rawCodes) {
   if (table.phase !== "play-select") return { ok: false, error: "Plays are not being selected now." };
   const seat = activeScoreSeats(table).find((entry) => !isScoreBotSeat(entry) && entry.userId === userId);
   if (!seat) return { ok: false, error: "You are watching this score battle." };
   if (!isCurrentScoreTurn(table, seat)) return { ok: false, error: "Wait for your turn to preview cards." };
   if (seat.submitted) return { ok: false, error: "You already submitted this round." };
+  const fateReady = scoreFateReadyForPlay(seat);
+  if (!fateReady.ok) return fateReady;
   const cardsResult = selectedScoreCards(table, seat, rawCodes);
   if (!cardsResult.ok) return cardsResult;
   const scoringEffect = scoreEffectForSeat(table, seat);
@@ -2707,6 +3004,7 @@ function recordScorePlay(table, seat, cards, automatic) {
   const result = scoreBattle.scorePlay(cards, scoringEffect, scoreContextForSeat(table, seat, {
     criticalRolls: scoreCriticalRollsForSeat(seat, cards.length)
   }));
+  applyScoreFateCollectorBonus(seat, result);
   const handCodes = new Set(seat.hand.map((card) => card.code));
   const playedHandCards = cards.filter((card) => handCodes.has(card.code));
   seat.hand = seat.hand.filter((card) => !handCodes.has(card.code) || !playedHandCards.some((played) => played.code === card.code));
@@ -2717,7 +3015,22 @@ function recordScorePlay(table, seat, cards, automatic) {
   applyScorePlayResourceBonuses(table, seat, result);
   seat.submitted = true;
   table.currentRoundLeaderSeatIds = scoreRoundLeaderSeatIds(table);
-  table.messages.unshift(`${seat.displayName} scored ${result.score} with ${result.handName}${automatic ? " automatically" : ""}.`);
+  const automaticText = automatic === "one-click" ? " with one-click play" : automatic ? " automatically" : "";
+  table.messages.unshift(`${seat.displayName} scored ${result.score} with ${result.handName}${automaticText}.`);
+  if (result.isRoyalFlush) finishScoreBattle(table, false, seat.seatId);
+}
+
+function applyScoreFateCollectorBonus(seat, result) {
+  if (seat?.fate?.kind !== "fate-collector") return;
+  seat.fateCollectedHandIds = Array.isArray(seat.fateCollectedHandIds) ? seat.fateCollectedHandIds : [];
+  if (seat.fateCollectedHandIds.includes(result.handId)) return;
+  seat.fateCollectedHandIds.push(result.handId);
+  const collectionNumber = seat.fateCollectedHandIds.length;
+  if (collectionNumber > 5) return;
+  const bonus = SCORE_BATTLE_FATE_COLLECTOR_BONUSES[collectionNumber] || 0;
+  result.score = Math.min(1000000, Math.max(0, Math.floor((Number(result.score) || 0) + bonus)));
+  result.scoreBonuses = result.scoreBonuses || [];
+  result.scoreBonuses.push({ kind: "fate-collector", amount: bonus });
 }
 
 function scoreCriticalRollsForSeat(seat, count) {
@@ -2743,8 +3056,10 @@ function scoreResultForClient(table, seat, cards, result, automatic, scoringEffe
   return {
     handId: result.handId,
     handName: result.handName,
+    isRoyalFlush: Boolean(result.isRoyalFlush),
     chips: result.chips,
     baseMultiplier: result.baseMultiplier,
+    naturalBaseMultiplier: result.naturalBaseMultiplier,
     bonusMultiplier: result.bonusMultiplier,
     additiveMultiplierTotal: result.additiveMultiplierTotal,
     multiplierFactors: result.multiplierFactors || [],
@@ -2768,7 +3083,8 @@ function scoreResultForClient(table, seat, cards, result, automatic, scoringEffe
     finalScoreFactors: result.finalScoreFactors || [],
     effect: scoringEffect,
     postRoundBonuses: [],
-    automatic: Boolean(automatic)
+    automatic: Boolean(automatic),
+    automaticReason: automatic || ""
   };
 }
 
@@ -2823,11 +3139,84 @@ function applyScorePostRoundBonuses(table) {
     }
   }
 
+  applyScoreFatePredictionBonuses(table);
+
   const finalLeaders = scoreRoundLeaderSeatIds(table);
   for (const seat of activeScoreSeats(table)) {
     if (!seat.persistentEffects?.matthewEffect || !finalLeaders.includes(seat.seatId)) continue;
     seat.discardUsesLeft = Math.max(0, Number(seat.discardUsesLeft) || 0) + 3;
     table.messages.unshift(`${seat.displayName} gained 3 discard uses from Matthew effect.`);
+  }
+
+  applyScoreGiantPenalties(table);
+}
+
+function applyScoreFatePredictionBonuses(table) {
+  const active = activeScoreSeats(table);
+  const predictors = active.filter(scoreFateNeedsTarget);
+  const adjustment = SCORE_BATTLE_FATE_TARGET_ADJUSTMENTS[table.round] || 0;
+  for (const seat of predictors) {
+    const target = active.find((entry) => entry.seatId === seat.fateTargetSeatId);
+    if (!target) continue;
+    const direction = seat.fate.kind === "going-long" ? 1 : -1;
+    adjustScoreRoundScore(table, target, direction * adjustment, `${seat.fate.kind}-target`, seat.displayName);
+  }
+
+  const lowest = active.length ? Math.min(...active.map((seat) => Number(seat.roundScore) || 0)) : 0;
+  const highest = Math.max(...active.map((seat) => Number(seat.roundScore) || 0), 0);
+  for (const seat of predictors) {
+    const target = active.find((entry) => entry.seatId === seat.fateTargetSeatId);
+    const correct = Boolean(target) && (seat.fate.kind === "going-long"
+      ? (Number(target.roundScore) || 0) === highest
+      : (Number(target.roundScore) || 0) === lowest);
+    seat.fateLastPredictionCorrect = correct;
+    if (!correct) {
+      seat.fatePredictionStreak = 0;
+      table.messages.unshift(`${seat.displayName}'s ${seat.fate.name} prediction missed.`);
+      continue;
+    }
+    seat.fatePredictionStreak = Math.max(0, Number(seat.fatePredictionStreak) || 0) + 1;
+    const roundBonus = SCORE_BATTLE_FATE_PREDICTION_BONUSES[table.round] || 0;
+    const streakIndex = Math.min(5, seat.fatePredictionStreak);
+    const streakBonus = SCORE_BATTLE_FATE_STREAK_BONUSES[streakIndex] || 0;
+    const bonus = roundBonus + streakBonus;
+    adjustScoreRoundScore(table, seat, bonus, seat.fate.kind, seat.displayName);
+    table.messages.unshift(`${seat.displayName}'s ${seat.fate.name} prediction succeeded for +${bonus}.`);
+  }
+}
+
+function adjustScoreRoundScore(table, seat, amount, kind, sourceName) {
+  const previous = Math.max(0, Number(seat.roundScore) || 0);
+  const next = Math.max(0, Math.floor(previous + (Number(amount) || 0)));
+  const actual = next - previous;
+  if (!actual) return 0;
+  seat.roundScore = next;
+  seat.totalScore = Math.max(0, Math.floor((Number(seat.totalScore) || 0) + actual));
+  if (seat.lastResult) {
+    seat.lastResult.score = next;
+    seat.lastResult.postRoundBonuses = seat.lastResult.postRoundBonuses || [];
+    seat.lastResult.postRoundBonuses.push({ kind, amount: actual, sourceName: sourceName || "" });
+  }
+  return actual;
+}
+
+function applyScoreGiantPenalties(table) {
+  const active = activeScoreSeats(table);
+  if (!active.length) return;
+  const lowest = Math.min(...active.map((seat) => Number(seat.roundScore) || 0));
+  const highest = Math.max(...active.map((seat) => Number(seat.roundScore) || 0));
+  const penalty = Math.max(0, Math.round(Math.max(lowest * 1.5, highest * 0.65)));
+  for (const seat of active) {
+    if (seat.fate?.kind !== "giant") continue;
+    const previous = Math.max(0, Number(seat.totalScore) || 0);
+    const next = Math.max(0, previous - penalty);
+    seat.totalScore = next;
+    seat.fateLastGiantPenalty = previous - next;
+    if (seat.lastResult) {
+      seat.lastResult.postRoundBonuses = seat.lastResult.postRoundBonuses || [];
+      seat.lastResult.postRoundBonuses.push({ kind: "giant-penalty", amount: -(previous - next), totalOnly: true });
+    }
+    table.messages.unshift(`${seat.displayName} lost ${previous - next} total points to The Giant's burden.`);
   }
 }
 
@@ -2852,13 +3241,20 @@ function processScoreBots(table) {
 }
 
 function playScoreBotTurn(table, seat) {
+  chooseScoreBotFate(table, seat);
   chooseScoreBotEffect(table, seat);
+  const fateReady = prepareScoreFateForPlay(table, seat, {
+    autoChooseFate: true,
+    autoChooseTarget: true,
+    rollAllDice: true
+  });
+  if (!fateReady.ok) throw new Error(fateReady.error);
   const scoringEffect = scoreEffectForSeat(table, seat);
   const best = scoreBattle.findBestPlay(seat.hand, table.community, scoringEffect, {
     ...scoreContextForSeat(table, seat, { criticalExpected: true }),
     requireCommunity: true
   });
-  recordScorePlay(table, seat, best.cards, true);
+  recordScorePlay(table, seat, best.cards, "bot");
   maybeAdvanceScoreBattle(table);
 }
 
@@ -3029,12 +3425,23 @@ function processScoreBattleTimeouts() {
     if (table.phase === "play-select") {
       const seat = currentScoreTurnSeat(table);
       if (seat) {
+        const fateReady = prepareScoreFateForPlay(table, seat, {
+          autoChooseFate: true,
+          autoChooseTarget: true,
+          rollAllDice: true
+        });
+        if (!fateReady.ok) {
+          table.messages.unshift(`${seat.displayName} could not complete the required FATE action.`);
+          seat.submitted = true;
+          maybeAdvanceScoreBattle(table);
+          continue;
+        }
         const scoringEffect = scoreEffectForSeat(table, seat);
         const best = scoreBattle.findBestPlay(seat.hand, table.community, scoringEffect, {
           ...scoreContextForSeat(table, seat, { criticalExpected: true }),
           requireCommunity: true,
         });
-        recordScorePlay(table, seat, best.cards, true);
+        recordScorePlay(table, seat, best.cards, "timeout");
       }
       maybeAdvanceScoreBattle(table);
       processScoreBots(table);
@@ -3051,7 +3458,7 @@ function processScoreBattleTimeouts() {
   }
 }
 
-function finishScoreBattle(table, abandoned) {
+function finishScoreBattle(table, abandoned, forcedWinnerSeatId = "") {
   const active = activeScoreSeats(table);
   table.phase = "finished";
   table.phaseDeadline = null;
@@ -3067,12 +3474,18 @@ function finishScoreBattle(table, abandoned) {
     table.results = ["The score battle ended because fewer than two players remained."];
     return;
   }
-  table.standings = scoreStandings(active);
+  table.standings = scoreStandings(active, forcedWinnerSeatId);
   recordScoreBattleWinners(table);
   awardScoreBattleCoins(table);
   recordScoreBattleHistory(table);
   table.results = table.standings.map((standing) => `${standing.rank}. ${standing.displayName} - ${standing.totalScore} total (+${standing.coins} coins)`);
-  table.messages.unshift(`Score battle ${table.gameNumber} finished.`);
+  const forcedWinner = active.find((seat) => seat.seatId === forcedWinnerSeatId);
+  if (forcedWinner) {
+    table.results.unshift(`${forcedWinner.displayName} won instantly with a Royal Flush.`);
+    table.messages.unshift(`${forcedWinner.displayName} completed a Royal Flush and won score battle ${table.gameNumber} immediately.`);
+  } else {
+    table.messages.unshift(`Score battle ${table.gameNumber} finished.`);
+  }
 }
 
 function recordScoreBattleWinners(table) {
@@ -3085,12 +3498,17 @@ function recordScoreBattleWinners(table) {
   }
 }
 
-function scoreStandings(seats) {
-  const sorted = seats.slice().sort((left, right) => right.totalScore - left.totalScore || right.roundScore - left.roundScore || left.displayName.localeCompare(right.displayName));
+function scoreStandings(seats, forcedWinnerSeatId = "") {
+  const sorted = seats.slice().sort((left, right) => {
+    if (left.seatId === forcedWinnerSeatId) return -1;
+    if (right.seatId === forcedWinnerSeatId) return 1;
+    return right.totalScore - left.totalScore || right.roundScore - left.roundScore || left.displayName.localeCompare(right.displayName);
+  });
   let previous = null;
   return sorted.map((seat, index) => {
-    const tied = previous && previous.totalScore === seat.totalScore && previous.roundScore === seat.roundScore;
-    const rank = tied ? previous.rank : index + 1;
+    const isForcedWinner = seat.seatId === forcedWinnerSeatId;
+    const tied = !isForcedWinner && previous && previous.seatId !== forcedWinnerSeatId && previous.totalScore === seat.totalScore && previous.roundScore === seat.roundScore;
+    const rank = isForcedWinner ? 1 : (tied ? previous.rank : index + 1);
     const standing = {
       seatId: seat.seatId,
       userId: seat.userId,
@@ -3190,6 +3608,9 @@ function recordTomatoThrow(table, userId, targetSeatId) {
   pruneTomatoEvents(table);
   const from = table.seats.find((seat) => seat.userId === userId && !seat.left);
   if (!from) return { ok: false, status: 403, error: "You must be seated at this table to throw tomatoes." };
+  if (String(table.id || "").startsWith("score-") && !scoreBattle.tomatoThrowAllowed(table.phase, table.currentTurnSeatId, from.seatId)) {
+    return { ok: false, status: 409, error: "In Score Battle, you can throw tomatoes only during another player's turn." };
+  }
   const target = table.seats.find((seat) => seat.seatId === String(targetSeatId || "") && !seat.left);
   if (!target) return { ok: false, status: 404, error: "Target player was not found." };
   if (target.seatId === from.seatId) return { ok: false, status: 400, error: "Choose another player." };
@@ -3242,7 +3663,7 @@ function scoreTomatoSplitTargets(table, from) {
 
 function recordScoreTomatoHit(table, from, target, now) {
   if (!String(table.id || "").startsWith("score-")) return;
-  if (!table.gameNumber || !table.round || ["waiting", "finished"].includes(table.phase)) return;
+  if (!table.gameNumber || !table.round || !scoreBattle.tomatoThrowAllowed(table.phase, table.currentTurnSeatId, from.seatId)) return;
   const danceThrower = Boolean(from?.persistentEffects?.danceIllusions);
   const danceTarget = Boolean(target?.persistentEffects?.danceIllusions);
   const countRouting = scoreBattle.tomatoCountRouting(danceThrower, danceTarget);
@@ -3380,6 +3801,7 @@ function scoreSeatForClient(table, seat, youSeat) {
     handName: seat.lastResult.handName,
     chips: seat.lastResult.chips,
     baseMultiplier: seat.lastResult.baseMultiplier,
+    naturalBaseMultiplier: seat.lastResult.naturalBaseMultiplier,
     bonusMultiplier: seat.lastResult.bonusMultiplier,
     additiveMultiplierTotal: seat.lastResult.additiveMultiplierTotal,
     multiplierFactors: seat.lastResult.multiplierFactors || [],
@@ -3388,6 +3810,7 @@ function scoreSeatForClient(table, seat, youSeat) {
     chipTotalBeforeFactors: seat.lastResult.chipTotalBeforeFactors,
     chipFactors: seat.lastResult.chipFactors || [],
     automatic: seat.lastResult.automatic,
+    automaticReason: seat.lastResult.automaticReason || "",
     effect: seat.lastResult.effect,
     cardValues: seat.lastResult.cardValues || [],
     multiplierBonuses: seat.lastResult.multiplierBonuses || [],
@@ -3414,6 +3837,13 @@ function scoreSeatForClient(table, seat, youSeat) {
     totalScore: seat.totalScore,
     tomatoCounts,
     persistentEffects: scorePersistentEffectsForClient(seat),
+    fate: scoreFateForClient(table, seat),
+    fateOptions: isYou && isScoreTurn && table.round === 1 && !seat.fateChosen ? (seat.fateOptions || []) : [],
+    fateChosen: Boolean(seat.fateChosen),
+    requiresFateChoice: Boolean(isYou && isScoreTurn && table.round === 1 && !seat.fateChosen),
+    canRollFateDice: Boolean(isYou && isScoreTurn && seat.fate?.kind === "dice" && seat.fateDiceRollsLeft > 0),
+    canChooseFateTarget: Boolean(isYou && isScoreTurn && scoreFateNeedsTarget(seat)),
+    canAutoPlay: Boolean(isYou && isScoreTurn && seat.fateChosen && (!scoreFateNeedsTarget(seat) || seat.fateTargetSeatId)),
     criticalProfile,
     attackSpeedProfile,
     winCount: Number(seat.winCount) || 0,
@@ -3430,6 +3860,26 @@ function scoreSeatForClient(table, seat, youSeat) {
     selectedEffect: seat.effectChosen ? seat.selectedEffect : (isYou ? seat.selectedEffect : null),
     effectChosen: isYou ? seat.effectChosen : false,
     lastResult: result
+  };
+}
+
+function scoreFateForClient(table, seat) {
+  if (!seat?.fateChosen || !seat.fate) return null;
+  const target = activeScoreSeats(table).find((entry) => entry.seatId === seat.fateTargetSeatId);
+  return {
+    kind: seat.fate.kind,
+    name: seat.fate.name,
+    diceCount: Math.max(0, Number(seat.fateDiceCount) || 0),
+    diceRolls: (seat.fateDiceRolls || []).slice(),
+    diceRollsLeft: Math.max(0, Number(seat.fateDiceRollsLeft) || 0),
+    diceValue: hasScoreFateDiceValue(seat) ? Number(seat.fateDiceValue) : null,
+    misfortune: Math.max(0, Number(seat.fateMisfortune) || 0),
+    targetSeatId: seat.fateTargetSeatId || null,
+    targetName: target?.displayName || "",
+    predictionStreak: Math.max(0, Number(seat.fatePredictionStreak) || 0),
+    lastPredictionCorrect: seat.fateLastPredictionCorrect ?? null,
+    collectedHandCount: (seat.fateCollectedHandIds || []).length,
+    lastGiantPenalty: Math.max(0, Number(seat.fateLastGiantPenalty) || 0)
   };
 }
 

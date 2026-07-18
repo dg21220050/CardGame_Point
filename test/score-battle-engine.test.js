@@ -5,9 +5,11 @@ const {
   createEffectOptions,
   criticalProfileForEffects,
   effectAllowedInRound,
+  fateDiceValueForRoll,
   findBestPlay,
   scorePlay,
-  tomatoCountRouting
+  tomatoCountRouting,
+  tomatoThrowAllowed
 } = require("../score-battle-engine");
 
 function cards(codes) {
@@ -111,15 +113,18 @@ test("action effects apply their chip, multiplier, and final-score stages", () =
   assert.equal(vigorous.score, 122);
 });
 
-test("tomato effects use throws for Old days and the restored x5 final bonuses", () => {
+test("tomato final-score bonuses use the hand multiplier capped at two", () => {
   const high = cards(["2S", "5H", "7D", "9C", "JS"]);
   const king = scorePlay(high, { kind: "tomato-king", tomatoHits: 6 });
-  assert.equal(king.scoreBonuses.find((bonus) => bonus.kind === "tomato-king").amount, 30);
-  assert.equal(king.score, 66);
+  assert.equal(king.scoreBonuses.find((bonus) => bonus.kind === "tomato-king").amount, 6);
+  assert.equal(king.score, 42);
 
   const shooter = scorePlay(high, { kind: "tomato-shooter", tomatoThrows: 5 });
-  assert.equal(shooter.scoreBonuses.find((bonus) => bonus.kind === "tomato-shooter").amount, 25);
-  assert.equal(shooter.score, 61);
+  assert.equal(shooter.scoreBonuses.find((bonus) => bonus.kind === "tomato-shooter").amount, 5);
+  assert.equal(shooter.score, 41);
+
+  const twoPairKing = scorePlay(cards(["4S", "4H", "7D", "7C", "9C"]), { kind: "tomato-king", tomatoHits: 6 });
+  assert.equal(twoPairKing.scoreBonuses.find((bonus) => bonus.kind === "tomato-king").amount, 12);
 
   const oldDays = scorePlay(high, { kind: "old-days-tomatoes", tomatoThrows: 10, tomatoHits: 999 });
   assert.equal(oldDays.globalChipBonuses.find((bonus) => bonus.kind === "old-days-tomatoes").amount, 5);
@@ -129,8 +134,17 @@ test("tomato effects use throws for Old days and the restored x5 final bonuses",
     persistentEffects: { temperedTomato: true },
     tomatoCounts: { hitsTotal: 90, throwsTotal: 60 }
   });
-  assert.equal(tempered.scoreBonuses.find((bonus) => bonus.kind === "tempered-tomato").amount, 285);
-  assert.equal(tempered.score, 360);
+  assert.equal(tempered.scoreBonuses.find((bonus) => bonus.kind === "tempered-tomato").amount, 114);
+  assert.equal(tempered.score, 189);
+});
+
+test("a 10-J-Q-K-A straight flush is marked as an instant-win Royal Flush", () => {
+  for (const suit of ["S", "H", "D", "C"]) {
+    const royal = scorePlay(cards([`T${suit}`, `J${suit}`, `Q${suit}`, `K${suit}`, `A${suit}`]));
+    assert.equal(royal.handId, "straight-flush");
+    assert.equal(royal.isRoyalFlush, true);
+  }
+  assert.equal(scorePlay(cards(["9S", "TS", "JS", "QS", "KS"])).isRoyalFlush, false);
 });
 
 test("Dance of Illusions routes tomato counts to throws instead of self-hits", () => {
@@ -138,6 +152,33 @@ test("Dance of Illusions routes tomato counts to throws instead of self-hits", (
   assert.deepEqual(tomatoCountRouting(true, false), { countsForThrower: true, countsForTarget: false });
   assert.deepEqual(tomatoCountRouting(false, true), { countsForThrower: false, countsForTarget: true });
   assert.deepEqual(tomatoCountRouting(true, true), { countsForThrower: true, countsForTarget: false });
+});
+
+test("Score Battle tomatoes are allowed only during another player's active turn", () => {
+  assert.equal(tomatoThrowAllowed("play-select", "seat-2", "seat-1"), true);
+  assert.equal(tomatoThrowAllowed("play-select", "seat-1", "seat-1"), false);
+  assert.equal(tomatoThrowAllowed("round-result", "seat-2", "seat-1"), false);
+  assert.equal(tomatoThrowAllowed("play-select", "", "seat-1"), false);
+});
+
+test("FATE dice probabilities use the documented cumulative boundaries", () => {
+  assert.equal(fateDiceValueForRoll(0), 3);
+  assert.equal(fateDiceValueForRoll(0.179999), 3);
+  assert.equal(fateDiceValueForRoll(0.18), 4);
+  assert.equal(fateDiceValueForRoll(0.389999), 4);
+  assert.equal(fateDiceValueForRoll(0.39), 5);
+  assert.equal(fateDiceValueForRoll(0.99), 20);
+  assert.equal(fateDiceValueForRoll(0.999999), 20);
+});
+
+test("The Dice FATE replaces only the base hand multiplier", () => {
+  const high = cards(["2S", "5H", "7D", "9C", "JS"]);
+  const result = scorePlay(high, { kind: "suit-chip", suit: "S" }, { baseMultiplierOverride: 12 });
+  assert.equal(result.naturalBaseMultiplier, 1);
+  assert.equal(result.baseMultiplier, 12);
+  assert.equal(result.bonusMultiplier, 1);
+  assert.equal(result.multiplier, 13);
+  assert.equal(result.score, 338);
 });
 
 test("bread effects, Astral Body, and crit profiles follow the new rules", () => {

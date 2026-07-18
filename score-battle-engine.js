@@ -32,6 +32,18 @@ const HANDS = [
 ];
 
 const HAND_BY_ID = new Map(HANDS.map((hand) => [hand.id, hand]));
+const FATE_DICE_OUTCOMES = [
+  { value: 3, probability: 0.18 },
+  { value: 4, probability: 0.21 },
+  { value: 5, probability: 0.21 },
+  { value: 6, probability: 0.15 },
+  { value: 7, probability: 0.09 },
+  { value: 8, probability: 0.07 },
+  { value: 10, probability: 0.04 },
+  { value: 12, probability: 0.025 },
+  { value: 15, probability: 0.015 },
+  { value: 20, probability: 0.01 }
+];
 function createDeck() {
   const deck = [];
   for (const suit of SUITS) {
@@ -96,6 +108,12 @@ function isStraight(uniqueRanks) {
   const ranks = uniqueRanks.slice().sort((a, b) => a - b);
   if (ranks.join(",") === "2,3,4,5,14") return true;
   return ranks.every((rank, index) => index === 0 || rank === ranks[index - 1] + 1);
+}
+
+function isRoyalFlush(cards) {
+  if (!Array.isArray(cards) || cards.length !== 5) return false;
+  if (!cards.every((card) => card.suit === cards[0].suit)) return false;
+  return cards.map((card) => card.rank).sort((left, right) => left - right).join(",") === "10,11,12,13,14";
 }
 
 function scoringIndexesForHand(cards, handId, rankCounts) {
@@ -200,6 +218,13 @@ function effectAllowedInRound(kind, round) {
 
 function scorePlay(cards, effect, context = {}) {
   const hand = evaluateExactFive(cards);
+  const royalFlush = isRoyalFlush(cards);
+  const naturalBaseMultiplier = hand.multiplier;
+  const requestedBaseMultiplier = Number(context.baseMultiplierOverride);
+  const baseMultiplier = Number.isFinite(requestedBaseMultiplier) && requestedBaseMultiplier > 0
+    ? requestedBaseMultiplier
+    : naturalBaseMultiplier;
+  const tomatoFinalScoreMultiplier = Math.min(hand.multiplier, 2);
   const scoringIndexes = new Set(hand.scoringIndexes || cards.map((_, index) => index));
   let chips = 0;
   let additiveMultiplier = 0;
@@ -390,11 +415,11 @@ function scorePlay(cards, effect, context = {}) {
     addScoreBonus(effect.kind, 150);
   }
   if (effect?.kind === "tomato-king") {
-    addScoreBonus(effect.kind, Math.max(0, Number(effect.tomatoHits) || 0) * 5);
+    addScoreBonus(effect.kind, Math.max(0, Number(effect.tomatoHits) || 0) * tomatoFinalScoreMultiplier);
     addMultiplierBonus(effect.kind, 1);
   }
   if (effect?.kind === "tomato-shooter") {
-    addScoreBonus(effect.kind, Math.max(0, Number(effect.tomatoThrows) || 0) * 5);
+    addScoreBonus(effect.kind, Math.max(0, Number(effect.tomatoThrows) || 0) * tomatoFinalScoreMultiplier);
     addMultiplierBonus(effect.kind, 1);
   }
   if (effect?.kind === "old-days-tomatoes") {
@@ -454,7 +479,7 @@ function scorePlay(cards, effect, context = {}) {
     const hits = Math.max(0, Number(tomatoCounts.hitsTotal) || 0);
     const throws = Math.max(0, Number(tomatoCounts.throwsTotal) || 0);
     if (hits > 30 || throws > 50) {
-      addScoreBonus("tempered-tomato", (hits * 0.5 + throws * 0.2) * 5);
+      addScoreBonus("tempered-tomato", (hits * 0.5 + throws * 0.2) * tomatoFinalScoreMultiplier);
     }
   }
   if (persistentEffects.returningFundamentals) {
@@ -482,7 +507,7 @@ function scorePlay(cards, effect, context = {}) {
     chips = Math.round(chips * chipFactor * 100) / 100;
   }
 
-  const additiveMultiplierTotal = hand.multiplier + additiveMultiplier;
+  const additiveMultiplierTotal = baseMultiplier + additiveMultiplier;
   let multiplier = additiveMultiplierTotal;
   for (const entry of multiplierFactors) multiplier *= entry.factor;
   const scoreBeforeBonuses = chips * multiplier * scoreFactor;
@@ -503,8 +528,10 @@ function scorePlay(cards, effect, context = {}) {
   return {
     handId: hand.id,
     handName: hand.name,
+    isRoyalFlush: royalFlush,
     chips,
-    baseMultiplier: hand.multiplier,
+    baseMultiplier,
+    naturalBaseMultiplier,
     bonusMultiplier: additiveMultiplier,
     additiveMultiplierTotal,
     multiplierFactors,
@@ -568,6 +595,20 @@ function tomatoCountRouting(throwerHasDanceIllusions, targetHasDanceIllusions) {
     countsForThrower: Boolean(throwerHasDanceIllusions) || !targetHasDanceIllusions,
     countsForTarget: !throwerHasDanceIllusions
   };
+}
+
+function tomatoThrowAllowed(phase, currentTurnSeatId, throwerSeatId) {
+  return phase === "play-select" && Boolean(currentTurnSeatId) && String(currentTurnSeatId) !== String(throwerSeatId);
+}
+
+function fateDiceValueForRoll(rawRoll) {
+  const roll = Math.min(1 - Number.EPSILON, Math.max(0, Number(rawRoll) || 0));
+  let boundary = 0;
+  for (const outcome of FATE_DICE_OUTCOMES) {
+    boundary += outcome.probability;
+    if (roll < boundary) return outcome.value;
+  }
+  return FATE_DICE_OUTCOMES[FATE_DICE_OUTCOMES.length - 1].value;
 }
 
 function criticalMultiplierForCard(index, profile, criticalRolls, useExpectedValue) {
@@ -634,12 +675,14 @@ function randomItem(items) {
 }
 
 module.exports = {
+  FATE_DICE_OUTCOMES,
   HANDS,
   RANKS,
   SUITS,
   createDeck,
   createEffectOptions,
   effectAllowedInRound,
+  fateDiceValueForRoll,
   criticalProfileForEffects,
   displayCode,
   findBestPlay,
@@ -648,5 +691,6 @@ module.exports = {
   rankSymbol,
   scorePlay,
   shuffle,
-  tomatoCountRouting
+  tomatoCountRouting,
+  tomatoThrowAllowed
 };

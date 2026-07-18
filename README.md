@@ -42,16 +42,24 @@ The stop script only shuts down the CardGame Point server started from this fold
 
 ## Current Rules
 
-- Score Battle supports 2-6 human players. It does not use money, blinds, betting, or computer players.
+- Score Battle supports 2-6 human or computer players. It does not use money, blinds, or betting.
 - A game has five rounds. Each round deals five new community cards and tops each player up to 3, 4, 5, 5, then 5 hand cards.
+- During each player's first-round turn, FATE presents two random build choices and requires one selection before play. The chosen FATE remains visible at that player's seat for the full game.
+- The six FATE builds are The Giant, The Dice, The Big Short, Going Long, The Collector, and The Clod. Only one player can choose The Giant in a game.
+- The Dice replaces the base hand multiplier with the player's highest roll that round; additive effect multipliers still apply afterward. Specified reroll and mirror effects permanently add dice.
+- The Clod changes its owner's round hand sizes to 5, 6, 7, 7, and 7 and grants one extra discard use each round.
 - Players choose exactly five cards from their own hand and the current community cards. Each play must include at least one community card.
 - Played hand cards are permanently discarded; unused hand cards remain for the next round.
 - Each player starts with four discard uses per game. A discard can exchange any number of selected hand cards for unique replacements in the same hand positions.
 - During rounds 2-5, players may choose one of three private effect cards while selecting a play. Effects are optional and resolved by the server.
 - Players act one at a time in rotating seat order. Each turn has a 90-second timer. Timeout automatically plays the best available five-card score that includes a community card.
+- A one-click play button beside the local player's seat uses the same server-side search to submit the highest estimated valid score while respecting the selected effect and FATE state.
 - Interactive effects may change hands or the community board immediately, so later players in the same round see and score against the changed state.
 - Score Battle effects use the current balance rules shown in the in-game scoring rules panel.
 - Scores use the selected cards' point total (Ace is 15), hand multiplier, and effect modifiers. The five round scores are added together.
+- Playing a same-suit 10, J, Q, K, and A Royal Flush immediately wins the game in any round.
+- Tomato King, Tomato Shooter, and Tempered Tomato multiply their count bonus by the lower of the played hand's base multiplier and 2.
+- Score Battle tomatoes can be thrown only during another player's active turn, not during your own turn or round settlement.
 - Submitted plays are revealed to all players with community cards highlighted and a scoring breakdown shown to the scoring player.
 - Players can throw tomatoes at other seated players. Tomato throws are visible to everyone at the table and are rate-limited.
 - Final standings award persistent in-game coins: 8 for first place, 4 for second, 2 for third, and 1 for later places.
