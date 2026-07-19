@@ -1,6 +1,6 @@
 # CardGame Point
 
-Version 0.0.6 is a points-only online card party game for lab teammates. The traditional betting-table mode has been removed; the project now focuses on Score Battle, effect cards, tomatoes, avatars, profile history, and future internet deployment.
+Version 0.0.8 is a points-only online card party game for lab teammates. The traditional betting-table mode has been removed; the project now focuses on Score Battle, FATE builds, renewable personal decks, effect cards, tomatoes, table chat, background music, avatars, profile history, and internet deployment.
 
 ## Start the Server
 

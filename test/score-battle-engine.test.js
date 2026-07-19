@@ -104,9 +104,15 @@ test("action effects apply their chip, multiplier, and final-score stages", () =
   assert.equal(chaos.multiplier, 2);
   assert.equal(chaos.score, 155);
 
-  const rambo = scorePlay(high, { kind: "rambo", amount: 10, seconds: 20 }, { turnElapsedMs: 20000 });
-  assert.equal(rambo.chips, 28);
-  assert.equal(rambo.score, 178);
+  const ramboTwenty = scorePlay(high, { kind: "rambo", seconds: 20 }, { turnElapsedMs: 20000 });
+  assert.equal(ramboTwenty.chips, 33);
+  assert.equal(ramboTwenty.multiplier, 2);
+  assert.equal(ramboTwenty.score, 66);
+
+  const ramboTen = scorePlay(high, { kind: "rambo", seconds: 20 }, { turnElapsedMs: 10000 });
+  assert.equal(ramboTen.chips, 48);
+  assert.equal(ramboTen.multiplier, 4);
+  assert.equal(ramboTen.score, 192);
 
   const vigorous = scorePlay(high, { kind: "vigorous" });
   assert.equal(vigorous.scoreBonuses.find((bonus) => bonus.kind === "vigorous").amount, 104.5);
@@ -163,12 +169,24 @@ test("Score Battle tomatoes are allowed only during another player's active turn
 
 test("FATE dice probabilities use the documented cumulative boundaries", () => {
   assert.equal(fateDiceValueForRoll(0), 3);
-  assert.equal(fateDiceValueForRoll(0.179999), 3);
-  assert.equal(fateDiceValueForRoll(0.18), 4);
-  assert.equal(fateDiceValueForRoll(0.389999), 4);
-  assert.equal(fateDiceValueForRoll(0.39), 5);
+  assert.equal(fateDiceValueForRoll(0.199999), 3);
+  assert.equal(fateDiceValueForRoll(0.2), 4);
+  assert.equal(fateDiceValueForRoll(0.419999), 4);
+  assert.equal(fateDiceValueForRoll(0.42), 5);
+  assert.equal(fateDiceValueForRoll(0.769999), 6);
+  assert.equal(fateDiceValueForRoll(0.77), 7);
   assert.equal(fateDiceValueForRoll(0.99), 20);
   assert.equal(fateDiceValueForRoll(0.999999), 20);
+});
+
+test("The Giant FATE adds one multiplier to every scored hand", () => {
+  const high = cards(["2S", "5H", "7D", "9C", "JS"]);
+  const result = scorePlay(high, null, { fateMultiplierBonus: 1 });
+  assert.equal(result.baseMultiplier, 1);
+  assert.equal(result.bonusMultiplier, 1);
+  assert.equal(result.multiplier, 2);
+  assert.equal(result.score, 36);
+  assert.deepEqual(result.multiplierBonuses, [{ kind: "fate-giant", amount: 1 }]);
 });
 
 test("The Dice FATE replaces only the base hand multiplier", () => {

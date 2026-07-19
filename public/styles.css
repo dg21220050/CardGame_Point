@@ -1004,6 +1004,7 @@ input:focus {
 }
 
 .score-community-area {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1031,6 +1032,7 @@ input:focus {
   border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 6px;
   background: rgba(0, 0, 0, 0.22);
+  transform: translateY(-3rem);
 }
 
 .score-seat-grid {
@@ -1056,6 +1058,10 @@ input:focus {
   min-height: 13.6rem;
   border-color: rgba(89, 166, 178, 0.9);
   z-index: 3;
+}
+
+.score-seat.is-you.has-wide-hand {
+  width: min(36rem, 56vw);
 }
 
 .score-seat.is-submitted {
@@ -1419,6 +1425,19 @@ input:focus {
   margin-top: 0;
 }
 
+.score-seat-actions .score-play-actions {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.score-play-actions button {
+  min-width: 0;
+  min-height: 2.8rem;
+  padding: 0.5rem 0.35rem;
+  font-size: 0.74rem;
+  line-height: 1.15;
+  white-space: normal;
+}
+
 .fate-required-note,
 .fate-turn-controls {
   padding: 0.42rem;
@@ -1473,7 +1492,7 @@ input:focus {
 .score-one-click-play {
   position: relative;
   z-index: 12;
-  width: 100%;
+  width: auto;
   min-height: 2.65rem;
   border-color: #f1c64b;
   color: #101612;
@@ -1525,6 +1544,10 @@ input:focus {
 }
 
 .round-effect-strip {
+  position: absolute;
+  left: calc(100% + 0.7rem);
+  top: 50%;
+  z-index: 8;
   display: grid;
   gap: 0.35rem;
   width: min(16rem, 24vw);
@@ -1535,6 +1558,7 @@ input:focus {
   border-radius: 8px;
   background: rgba(16, 23, 21, 0.72);
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
+  transform: translateY(-50%);
 }
 
 .round-effect-pill {
@@ -1550,6 +1574,7 @@ input:focus {
 }
 
 .battle-result {
+  position: relative;
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 0.16rem 0.5rem;
@@ -1560,6 +1585,57 @@ input:focus {
   color: #fff5c9;
   background: rgba(44, 33, 7, 0.5);
   font-size: 0.8rem;
+}
+
+.battle-result.is-concealed {
+  cursor: pointer;
+  outline: none;
+}
+
+.battle-result.is-concealed:focus {
+  border-color: rgba(89, 166, 178, 0.88);
+  box-shadow: 0 0 0 3px rgba(89, 166, 178, 0.18);
+}
+
+.result-reveal-hint {
+  color: var(--muted);
+  font-size: 0.68rem;
+  text-align: right;
+}
+
+.battle-result-popover {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 0.45rem);
+  z-index: 40;
+  display: none;
+  width: min(18rem, 78vw);
+  padding: 0.55rem;
+  border: 1px solid rgba(241, 198, 75, 0.62);
+  border-radius: 7px;
+  color: #fff5c9;
+  background: rgba(16, 23, 21, 0.98);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.46);
+  transform: translateX(-50%);
+}
+
+.score-seat-2 .battle-result-popover,
+.score-seat-3 .battle-result-popover,
+.score-seat-4 .battle-result-popover {
+  top: calc(100% + 0.45rem);
+  bottom: auto;
+}
+
+.battle-result.is-concealed:hover .battle-result-popover,
+.battle-result.is-concealed:focus .battle-result-popover,
+.battle-result.is-concealed:focus-within .battle-result-popover {
+  display: block;
+}
+
+.battle-result-popover > strong {
+  display: block;
+  margin-bottom: 0.35rem;
+  text-align: center;
 }
 
 .battle-result strong {
@@ -1594,6 +1670,16 @@ input:focus {
   justify-content: center;
   gap: 0.38rem;
   min-height: 6rem;
+}
+
+.battle-hand > .battle-card {
+  flex: 0 0 clamp(3.9rem, 4vw, 5rem);
+}
+
+.score-seat.has-wide-hand .battle-hand {
+  justify-content: flex-start;
+  overflow-x: auto;
+  padding: 0.45rem 0.2rem 0.25rem;
 }
 
 .score-seat:not(.is-you) .battle-hand {
@@ -1665,6 +1751,22 @@ button.battle-card:hover {
   font-size: 0.52rem;
   font-weight: 900;
   line-height: 1.1;
+  white-space: nowrap;
+}
+
+.second-deck-tag {
+  position: absolute;
+  top: 0.22rem;
+  right: 0.1rem;
+  z-index: 3;
+  max-width: 90%;
+  padding: 0.12rem 0.24rem;
+  border-radius: 4px;
+  color: #fff5c9;
+  background: rgba(16, 23, 21, 0.92);
+  font-size: 0.48rem;
+  font-weight: 900;
+  line-height: 1.05;
   white-space: nowrap;
 }
 
@@ -1956,6 +2058,32 @@ button.battle-card:hover {
   display: grid;
   place-items: center;
   font-size: 1.3rem;
+}
+
+.score-loss-modal {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 0.85rem;
+  width: min(24rem, 100%);
+  text-align: center;
+}
+
+.score-loss-modal .modal-close {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+}
+
+.score-loss-modal h2 {
+  margin: 0.25rem 0;
+  font-size: 1.45rem;
+}
+
+.music-toggle.is-playing {
+  color: #fff5c9;
+  border-color: rgba(241, 198, 75, 0.7);
+  background: rgba(96, 65, 10, 0.38);
 }
 
 .update-list {
@@ -2640,6 +2768,10 @@ button.battle-card:hover {
     transform: translateY(-2.15rem);
   }
 
+  .score-title {
+    transform: translateY(-2.7rem);
+  }
+
   .round-effect-strip {
     width: min(11rem, 32vw);
     max-height: 6.5rem;
@@ -2655,6 +2787,10 @@ button.battle-card:hover {
   .score-seat.is-you {
     width: 82vw;
     min-height: 12.4rem;
+  }
+
+  .score-seat.is-you.has-wide-hand {
+    width: 96vw;
   }
 
   .score-seat-1 {
@@ -2687,6 +2823,10 @@ button.battle-card:hover {
 
   .battle-card {
     width: 3.5rem;
+  }
+
+  .battle-hand > .battle-card {
+    flex-basis: 3.5rem;
   }
 
   .score-community .battle-card {

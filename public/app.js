@@ -1,7 +1,9 @@
 const app = document.querySelector("#app");
 const LANG_KEY = "cardgame_point_lang";
-const APP_VERSION = "0.0.6";
+const APP_VERSION = "0.0.8";
 const UPDATE_NOTICE_KEY = "cardgame_point_seen_update";
+const BGM_STORAGE_KEY = "cardgame_point_bgm_enabled";
+const BGM_SRC = "/music/Are-you-lost-park-bird.mp3";
 const AVATAR_EXPORT_SIZE = 384;
 const AVATAR_MAX_DATA_URL_LENGTH = 220 * 1024;
 const SCORE_CALC_TOTAL_MS = 7000;
@@ -297,6 +299,24 @@ Object.assign(zhText, {
   "Expected crit": "\u66b4\u51fb\u671f\u671b"
 });
 
+Object.assign(zhText, {
+  "Update 0.0.8": "0.0.8 \u66f4\u65b0\u5185\u5bb9",
+  "Music on": "\u97f3\u4e50\u5df2\u5f00\u542f",
+  "Music off": "\u97f3\u4e50\u5df2\u5173\u95ed",
+  "Music playback could not start.": "\u80cc\u666f\u97f3\u4e50\u65e0\u6cd5\u5f00\u59cb\u64ad\u653e\u3002",
+  "Second deck": "\u7b2c\u4e8c\u5e45\u724c",
+  "Hover or tap to view cards": "\u5c06\u9f20\u6807\u79fb\u5165\u6216\u70b9\u51fb\u67e5\u770b\u51fa\u724c",
+  "Your rank": "\u4f60\u7684\u6392\u540d",
+  "Try again?": "\u518d\u8bd5\u4e00\u6b21\uff1f",
+  "Sealed": "\u5df2\u5c01\u5370",
+  "Personal decks now refresh when exhausted, and replacement cards from a refreshed deck are marked as Second deck.": "\u4e2a\u4eba\u724c\u5e93\u8017\u5c3d\u540e\u4f1a\u81ea\u52a8\u5237\u65b0\uff0c\u5237\u65b0\u540e\u7684\u66ff\u6362\u724c\u4f1a\u6807\u8bb0\u4e3a\u7b2c\u4e8c\u5e45\u724c\u3002",
+  "Turns now last 120 seconds, with updated FATE and Rambo balance.": "\u6bcf\u4f4d\u73a9\u5bb6\u7684\u51fa\u724c\u65f6\u95f4\u5ef6\u957f\u81f3 120 \u79d2\uff0c\u5e76\u8c03\u6574\u4e86 FATE \u4e0e\u7ea2\u6e29\u706b\u70e4\u3002",
+  "Other players' cards are hidden until hovered or tapped, and table controls now share one row.": "\u5176\u4ed6\u73a9\u5bb6\u7684\u5177\u4f53\u51fa\u724c\u6539\u4e3a\u79fb\u5165\u6216\u70b9\u51fb\u540e\u67e5\u770b\uff0c\u4e09\u4e2a\u51fa\u724c\u6309\u94ae\u73b0\u5728\u540c\u884c\u663e\u793a\u3002",
+  "Background music and a post-game rank prompt are now available.": "\u65b0\u589e\u5faa\u73af\u80cc\u666f\u97f3\u4e50\u5f00\u5173\u4e0e\u8d25\u65b9\u6392\u540d\u63d0\u793a\u3002",
+  "Discard uses have no total cap. If a personal deck runs out, it refreshes without community or retained hand cards; replacements are marked Second deck.": "\u5f03\u724c\u603b\u6b21\u6570\u4e0d\u8bbe\u4e0a\u9650\u3002\u4e2a\u4eba\u724c\u5e93\u8017\u5c3d\u65f6\uff0c\u4f1a\u6392\u9664\u516c\u5171\u724c\u548c\u4fdd\u7559\u624b\u724c\u540e\u5237\u65b0\uff0c\u66ff\u6362\u724c\u6807\u8bb0\u4e3a\u7b2c\u4e8c\u5e45\u724c\u3002",
+  "Each score-battle turn lasts 120 seconds.": "\u79ef\u5206\u5bf9\u6218\u6bcf\u4e2a\u51fa\u724c\u56de\u5408\u9650\u65f6 120 \u79d2\u3002"
+});
+
 const zhPhase = {
   waiting: "等待中",
   preflop: "翻牌前",
@@ -391,6 +411,9 @@ const state = {
   scoreChatDrafts: {},
   scoreChatScrolls: {},
   scoreChatStickToBottom: {},
+  backgroundMusicEnabled: readSavedBackgroundMusic(),
+  seenScoreLossKeys: new Set(),
+  scoreLossDialog: null,
   scoreTableRefreshFailures: 0
 };
 
@@ -410,6 +433,57 @@ function saveLanguage() {
   } catch {
     // Language persistence is a convenience only.
   }
+}
+
+function readSavedBackgroundMusic() {
+  try {
+    return localStorage.getItem(BGM_STORAGE_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function backgroundMusicPlayer() {
+  let audio = document.querySelector("#background-music-player");
+  if (audio) return audio;
+  audio = document.createElement("audio");
+  audio.id = "background-music-player";
+  audio.src = BGM_SRC;
+  audio.loop = true;
+  audio.preload = "auto";
+  document.body.appendChild(audio);
+  return audio;
+}
+
+async function syncBackgroundMusic() {
+  const audio = backgroundMusicPlayer();
+  if (!state.backgroundMusicEnabled) {
+    audio.pause();
+    audio.currentTime = 0;
+    return;
+  }
+  await audio.play();
+}
+
+async function toggleBackgroundMusic() {
+  state.backgroundMusicEnabled = !state.backgroundMusicEnabled;
+  try {
+    localStorage.setItem(BGM_STORAGE_KEY, String(state.backgroundMusicEnabled));
+  } catch {
+    // Music preference persistence is optional.
+  }
+  try {
+    await syncBackgroundMusic();
+  } catch {
+    state.backgroundMusicEnabled = false;
+    state.error = t("Music playback could not start.");
+    try {
+      localStorage.setItem(BGM_STORAGE_KEY, "false");
+    } catch {
+      // Ignore storage failures.
+    }
+  }
+  render();
 }
 
 function toggleLanguage() {
@@ -737,6 +811,7 @@ async function boot() {
   if (state.user) await refreshProfile(false);
   await refreshScoreTables();
   render();
+  if (state.backgroundMusicEnabled) syncBackgroundMusic().catch(() => {});
   startPolling();
 }
 
@@ -867,6 +942,7 @@ function setCurrentScoreTable(table) {
   queueBattleScoreOverlays(table);
   queueTomatoEvents(table, "score");
   handleScoreVictoryEffect(table);
+  handleScoreLossDialog(table);
   requestBattleScorePreview();
 }
 
@@ -887,6 +963,7 @@ function clearCurrentScoreTable() {
   state.battleScoreSeenKeys.clear();
   state.battleScoreQueue = [];
   state.battleScoreOverlay = null;
+  state.scoreLossDialog = null;
   state.victoryEffectUntil = 0;
   state.victoryEffectSrc = "";
   if (state.battleCommunityTimer) {
@@ -1053,6 +1130,7 @@ function render() {
   appendUpdateNotice();
   appendUpdateHistoryModal();
   appendAccountModals();
+  appendScoreLossDialog();
   renderBattleRulesModalHost();
   restoreFocus(focus);
 }
@@ -1069,6 +1147,54 @@ function appendVictoryEffect() {
   ]));
 }
 
+function handleScoreLossDialog(table) {
+  if (!table || table.phase !== "finished" || !table.youSeatId || !Array.isArray(table.standings)) return;
+  const standing = table.standings.find((entry) => entry.seatId === table.youSeatId);
+  if (!standing || Number(standing.rank) <= 1) return;
+  const key = `${table.id}:${table.gameNumber}:${table.youSeatId}:${standing.rank}`;
+  if (state.seenScoreLossKeys.has(key)) return;
+  state.seenScoreLossKeys.add(key);
+  state.scoreLossDialog = {
+    key,
+    tableId: table.id,
+    gameNumber: table.gameNumber,
+    rank: Number(standing.rank) || "-"
+  };
+}
+
+function appendScoreLossDialog() {
+  const dialog = state.scoreLossDialog;
+  if (!dialog || !state.user) return;
+  app.appendChild(el("div", { className: "modal-backdrop score-loss-backdrop", role: "presentation" }, [
+    el("section", { className: "update-modal score-loss-modal", role: "dialog", "aria-modal": "true", "aria-labelledby": "score-loss-title" }, [
+      el("button", {
+        className: "ghost modal-close",
+        type: "button",
+        onclick: dismissScoreLossDialog,
+        "aria-label": t("Close")
+      }, ["x"]),
+      el("span", { className: "pill" }, [t("Final standings")]),
+      el("h2", { id: "score-loss-title" }, [`${t("Your rank")}: ${dialog.rank}`]),
+      el("button", { type: "button", onclick: tryScoreBattleAgain }, [t("Try again?")])
+    ])
+  ]));
+}
+
+function dismissScoreLossDialog() {
+  state.scoreLossDialog = null;
+  render();
+}
+
+async function tryScoreBattleAgain() {
+  const dialog = state.scoreLossDialog;
+  state.scoreLossDialog = null;
+  if (dialog && state.scoreTable?.id === dialog.tableId && state.scoreTable?.canReady) {
+    await setScoreReady(true);
+    return;
+  }
+  render();
+}
+
 function appendUpdateNotice() {
   if (!state.user || !state.showUpdateNotice) return;
   app.appendChild(el("div", { className: "modal-backdrop", role: "presentation" }, [
@@ -1081,6 +1207,10 @@ function appendUpdateNotice() {
         el("button", { className: "ghost modal-close", type: "button", onclick: dismissUpdateNotice, "aria-label": t("Got it") }, ["x"])
       ]),
       el("ul", { className: "update-list" }, [
+        el("li", {}, [t("Personal decks now refresh when exhausted, and replacement cards from a refreshed deck are marked as Second deck.")]),
+        el("li", {}, [t("Turns now last 120 seconds, with updated FATE and Rambo balance.")]),
+        el("li", {}, [t("Other players' cards are hidden until hovered or tapped, and table controls now share one row.")]),
+        el("li", {}, [t("Background music and a post-game rank prompt are now available.")]),
         el("li", {}, [t("Round 1 now uses the required two-choice FATE build system.")]),
         el("li", {}, [t("One-click play automatically submits the highest-scoring valid hand with your selected effect.")]),
         el("li", {}, [t("Password changes are available from Profile, and admin feedback is available from the main page.")]),
@@ -1101,6 +1231,15 @@ function appendUpdateNotice() {
 
 function updateHistoryEntries() {
   return [
+    {
+      version: "0.0.8",
+      items: [
+        "Personal decks now refresh when exhausted, and replacement cards from a refreshed deck are marked as Second deck.",
+        "Turns now last 120 seconds, with updated FATE and Rambo balance.",
+        "Other players' cards are hidden until hovered or tapped, and table controls now share one row.",
+        "Background music and a post-game rank prompt are now available."
+      ]
+    },
     {
       version: "0.0.6",
       items: [
@@ -1497,7 +1636,9 @@ function buildBattleScoreOverlay() {
         ...(result.globalChipBonuses || []).map((bonus) => el("span", {}, [`${battleEffectName({ kind: bonus.kind })}: +${bonus.amount}`])),
         ...(result.chipFactors || []).map((factor) => el("span", {}, [`${battleEffectName({ kind: factor.kind })}: x${factor.factor} ${t("Chip total")}`])),
         ...(result.scoreBonuses || []).map((bonus) => el("span", {}, [`${battleEffectName({ kind: bonus.kind })}: +${bonus.amount} ${t("Final score")}`])),
-        ...(result.postRoundBonuses || []).map((bonus) => el("span", {}, [`${battleEffectName({ kind: bonus.kind })}: +${bonus.amount}`])),
+        ...(result.postRoundBonuses || []).map((bonus) => el("span", {}, [
+          `${battleEffectName({ kind: bonus.kind })}: ${Number(bonus.amount) >= 0 ? "+" : ""}${bonus.amount}`
+        ])),
         el("span", {}, [`${t("Hand multiplier")}: ${translateBattleHand(result.handName)} x ${multiplierText}`]),
         ...(result.scoreFactors || []).map((factor) => el("span", {}, [`${battleEffectName({ kind: factor.kind })}: x${factor.factor}`])),
         ...(result.finalScoreFactors || []).map((factor) => el("span", {}, [`${battleEffectName({ kind: factor.kind })}: x${factor.factor} ${t("Final score")}`])),
@@ -1564,7 +1705,8 @@ function buildBattleRulesModal() {
             el("li", {}, [t("Choose five cards from your hand and the community board. At least one card must be a community card.")]),
             el("li", {}, [t("Only cards that make the scored hand contribute base chips; other played cards only score through specific effect bonuses.")]),
             el("li", {}, [t("Round hand sizes refill to 3, 4, 5, 5, and 5 cards. Unplayed hand cards stay for the next round.")]),
-            el("li", {}, [t("Played hand cards are removed for the rest of the game. Each player has four discard uses per game.")])
+            el("li", {}, [t("Discard uses have no total cap. If a personal deck runs out, it refreshes without community or retained hand cards; replacements are marked Second deck.")]),
+            el("li", {}, [t("Each score-battle turn lasts 120 seconds.")])
           ]),
           el("h3", {}, ["FATE"]),
           el("ul", { className: "update-list rules-effect-list" }, scoreFateRuleText().map((line) => el("li", {}, [line]))),
@@ -1604,7 +1746,12 @@ function scoreRuleRows() {
 
 function battleEffectRuleText() {
   const balancedRules = battleBalanceRuleText();
-  if (balancedRules.length) return balancedRules;
+  if (balancedRules.length) {
+    const ramboName = battleEffectName({ kind: "rambo" });
+    return balancedRules.map((line) => line.startsWith(`${ramboName}:`)
+      ? `${ramboName}: ${battleEffectDescription({ kind: "rambo" })}`
+      : line);
+  }
   if (isZh()) {
     return [
       "同花色点数增强：指定花色的已出牌每张 +4 点。",
@@ -2032,6 +2179,12 @@ function renderTopbar(withUser) {
     type: "button",
     onclick: openUpdateHistory
   }, [t("Update history")]);
+  const musicButton = el("button", {
+    className: `ghost music-toggle ${state.backgroundMusicEnabled ? "is-playing" : ""}`,
+    type: "button",
+    "aria-pressed": state.backgroundMusicEnabled ? "true" : "false",
+    onclick: toggleBackgroundMusic
+  }, [state.backgroundMusicEnabled ? t("Music on") : t("Music off")]);
 
   if (withUser && state.user) {
     bar.appendChild(el("div", { className: "user-strip" }, [
@@ -2050,6 +2203,7 @@ function renderTopbar(withUser) {
         }
       }, [state.showProfile ? t("Hide profile") : t("Profile")]),
       updateHistoryButton,
+      musicButton,
       languageButton,
       el("button", {
         className: "ghost",
@@ -2058,7 +2212,7 @@ function renderTopbar(withUser) {
       }, [t("Logout")])
     ]));
   } else {
-    bar.appendChild(el("div", { className: "user-strip" }, [updateHistoryButton, languageButton]));
+    bar.appendChild(el("div", { className: "user-strip" }, [updateHistoryButton, musicButton, languageButton]));
   }
   return bar;
 }
@@ -2633,7 +2787,9 @@ function renderScoreRoundEffects(table) {
   const effects = table.roundEffects || [];
   if (!effects.length) return "";
   return el("div", { className: "round-effect-strip" }, effects.map((effect) => el("span", { className: "round-effect-pill" }, [
-    `${battleEffectName(effect)}: ${battleEffectDescription(effect)}`
+    effect.kind === "void-suit"
+      ? `${battleSuitName(effect.suit)} ${t("Sealed")}`
+      : `${battleEffectName(effect)}: ${battleEffectDescription(effect)}`
   ])));
 }
 
@@ -2673,6 +2829,7 @@ function renderScoreSeat(seat, index) {
     "score-seat",
     `score-seat-${index}`,
     seat.isYou ? "is-you" : "",
+    seat.isYou && (seat.hand || []).length > 5 ? "has-wide-hand" : "",
     seat.submitted ? "is-submitted" : "",
     seat.wonLastGame ? "won-last-game" : "",
     seat.isScoreTurn ? "is-score-turn" : "",
@@ -2732,16 +2889,7 @@ function renderScoreSeat(seat, index) {
   const fate = renderScoreFateLine(seat);
   const persistentEffects = renderScorePersistentEffects(seat);
   const scorePreview = seat.isYou ? renderScorePreview() : "";
-  const result = seat.lastResult
-    ? el("div", { className: "battle-result" }, [
-      el("strong", {}, [translateBattleHand(seat.lastResult.handName)]),
-      el("span", {}, [`${t("Score")} ${seat.lastResult.score}`]),
-      seat.lastResult.automatic ? el("span", { className: "result-note" }, [
-        seat.lastResult.automaticReason === "one-click" ? t("One-click play") : t("Automatic")
-      ]) : "",
-      renderScoreResultCards(seat.lastResult)
-    ])
-    : "";
+  const result = renderScoreSeatResult(seat);
 
   return el("article", props, [
     winStars,
@@ -2767,6 +2915,32 @@ function renderScoreSeat(seat, index) {
     actions,
     result,
     hand
+  ]);
+}
+
+function renderScoreSeatResult(seat) {
+  if (!seat.lastResult) return "";
+  if (seat.isYou) {
+    return el("div", { className: "battle-result" }, [
+      el("strong", {}, [translateBattleHand(seat.lastResult.handName)]),
+      el("span", {}, [`${t("Score")} ${seat.lastResult.score}`]),
+      seat.lastResult.automatic ? el("span", { className: "result-note" }, [
+        seat.lastResult.automaticReason === "one-click" ? t("One-click play") : t("Automatic")
+      ]) : "",
+      renderScoreResultCards(seat.lastResult)
+    ]);
+  }
+  return el("div", {
+    className: "battle-result is-concealed",
+    tabindex: "0",
+    title: t("Hover or tap to view cards")
+  }, [
+    el("strong", {}, [`${t("Score")} ${seat.lastResult.score}`]),
+    el("span", { className: "result-reveal-hint" }, [t("Played cards")]),
+    el("div", { className: "battle-result-popover" }, [
+      el("strong", {}, [translateBattleHand(seat.lastResult.handName)]),
+      renderScoreResultCards(seat.lastResult)
+    ])
   ]);
 }
 
@@ -2855,7 +3029,7 @@ function renderScoreSeatActions(seat) {
       selectedCount === 5 && !selectedHasCommunity ? ` | ${t("Must include community card")}` : "",
       selectedCount > 5 ? ` | ${t("Discard any number of selected hand cards.")}` : ""
     ]),
-    el("div", { className: "battle-action-row" }, [
+    el("div", { className: "battle-action-row score-play-actions" }, [
       el("button", {
         className: "secondary",
         type: "button",
@@ -2866,14 +3040,14 @@ function renderScoreSeatActions(seat) {
         type: "button",
         disabled: !canPlay,
         onclick: submitBattlePlay
-      }, [`${t("Submit play")} ${selectedCount}/5`])
-    ]),
-    el("button", {
-      className: "score-one-click-play",
-      type: "button",
-      disabled: !seat.canAutoPlay || state.battleAutoPlayBusy,
-      onclick: autoPlayBattleHand
-    }, [state.battleAutoPlayBusy ? t("Choosing best play") : t("One-click play")])
+      }, [`${t("Submit play")} ${selectedCount}/5`]),
+      el("button", {
+        className: "score-one-click-play",
+        type: "button",
+        disabled: !seat.canAutoPlay || state.battleAutoPlayBusy,
+        onclick: autoPlayBattleHand
+      }, [state.battleAutoPlayBusy ? t("Choosing best play") : t("One-click play")])
+    ])
   ]);
 }
 
@@ -2896,7 +3070,9 @@ function renderScoreFateControls(seat, table) {
     ]);
   }
   if (["big-short", "going-long"].includes(fate.kind)) {
-    const targets = (table.seats || []).filter((entry) => entry.inGame && !entry.left && !entry.isYou);
+    const targets = (table.seats || []).filter((entry) => (
+      entry.inGame && !entry.left && (fate.kind === "going-long" || !entry.isYou)
+    ));
     return el("div", { className: "fate-turn-controls fate-target-controls" }, [
       el("strong", {}, [t("Choose prediction target")]),
       el("div", { className: "fate-target-grid" }, targets.map((target) => el("button", {
@@ -2904,7 +3080,7 @@ function renderScoreFateControls(seat, table) {
         type: "button",
         disabled: state.battleFateBusy,
         onclick: () => chooseBattleFateTarget(target.seatId)
-      }, [target.displayName])))
+      }, [`${target.displayName}${target.isYou ? ` (${t("You")})` : ""}`])))
     ]);
   }
   return "";
@@ -2969,13 +3145,17 @@ function renderBattleCard(card, source, table, options = {}) {
     options.extraClass || ""
   ].filter(Boolean).join(" ");
   const props = { className: classes };
+  const secondDeckTag = Number(card.deckNumber) >= 2
+    ? el("span", { className: "second-deck-tag" }, [t("Second deck")])
+    : "";
   if (options.style) props.style = options.style;
   if (nonScoring) props.title = t("Not part of scoring hand");
   if (!interactive || source === "result" || card.code === "BACK") {
     return el("div", props, [
       cardImage(card),
       communityPlayed ? el("span", { className: "community-tag" }, [t("Community card")]) : "",
-      nonScoring ? el("span", { className: "non-scoring-tag" }, [t("Bonus only")]) : ""
+      nonScoring ? el("span", { className: "non-scoring-tag" }, [t("Bonus only")]) : "",
+      secondDeckTag
     ]);
   }
   return el("button", {
@@ -2984,7 +3164,7 @@ function renderBattleCard(card, source, table, options = {}) {
     "aria-pressed": selected ? "true" : "false",
     style: options.style || "",
     onclick: () => toggleBattleCard(card.code, source)
-  }, [cardImage(card)]);
+  }, [cardImage(card), secondDeckTag]);
 }
 
 function renderScoreSidePanel(table) {
@@ -3430,6 +3610,22 @@ function scoreFateName(fate) {
 
 function scoreFateDescription(fate) {
   const kind = fate?.kind;
+  const descriptions = isZh() ? {
+    giant: "\u5f00\u5c40\u83b7\u5f97 3500 \u603b\u5206\u548c 7 \u6b21\u5f03\u724c\uff0c\u6240\u6709\u624b\u724c\u500d\u7387 +1\uff1b\u7b2c 2-5 \u56de\u5408\u4e0d\u80fd\u9009\u666e\u901a\u7279\u6548\u3002\u6bcf\u56de\u5408\u7ed3\u7b97\u540e\u603b\u5206\u6263\u9664 max(\u6700\u4f4e\u56de\u5408\u5206x1.5, \u6700\u9ad8\u56de\u5408\u5206x65%)\uff0c\u6700\u4f4e\u81f3 0\u3002\u6bcf\u5c40\u6700\u591a\u4e00\u4f4d\u5de8\u4eba\u3002",
+    dice: "\u6bcf\u56de\u5408\u4ee5\u6700\u5927\u9ab0\u5b50\u7ed3\u679c\u66ff\u6362\u57fa\u7840\u724c\u578b\u500d\u7387\uff0c\u7279\u6548\u500d\u7387\u7ee7\u7eed\u52a0\u7b97\u3002\u6bcf\u4e09\u6b21\u63b7\u51fa x3 \u83b7\u5f97\u989d\u5916\u4e00\u63b7\u3002\u6982\u7387\uff1ax3 20%\u3001x4 22%\u3001x5 21%\u3001x6 14%\u3001x7 8.5%\u3001x8 6%\u3001x10 3.5%\u3001x12 2.5%\u3001x15 1.5%\u3001x20 1%\u3002",
+    "big-short": "\u6bcf\u56de\u5408\u51fa\u724c\u524d\u505a\u7a7a\u53e6\u4e00\u4f4d\u73a9\u5bb6\uff0c\u4f7f\u5176\u56de\u5408\u5206 -20/-50/-80/-100/-150\u3002\u82e5\u76ee\u6807\u4e3a\u6700\u4f4e\u5206\uff0c\u4f60\u83b7\u5f97 50/100/150/200/300 \u4e0e\u8fde\u80dc\u5956\u52b1\uff1b\u82e5\u9884\u6d4b\u5931\u8d25\uff0c\u4f60\u7684\u603b\u5206\u989d\u5916 -50/-80/-80/-80/-80\u3002",
+    "going-long": "\u6bcf\u56de\u5408\u51fa\u724c\u524d\u505a\u591a\u4e00\u4f4d\u73a9\u5bb6\uff08\u53ef\u4ee5\u9009\u81ea\u5df1\uff09\uff0c\u4f7f\u5176\u56de\u5408\u5206 +20/+50/+80/+100/+150\u3002\u82e5\u76ee\u6807\u4e3a\u6700\u9ad8\u5206\uff0c\u4f60\u83b7\u5f97 50/100/150/200/300 \u4e0e\u8fde\u80dc\u5956\u52b1\u3002",
+    "fate-collector": "\u4e94\u56de\u5408\u5185\u7b2c\u4e00\u6b21\u6253\u51fa\u4e00\u79cd\u81ea\u5df1\u6b64\u524d\u672a\u6253\u51fa\u7684\u724c\u578b\u65f6\uff0c\u6309\u7b2c 1/2/3/4/5 \u79cd\u5206\u522b\u83b7\u5f97 +20/+80/+150/+250/+350 \u56de\u5408\u5206\u3002",
+    clod: "\u7b2c 1/2/3/4/5 \u56de\u5408\u624b\u724c\u6570\u6539\u4e3a 4/5/6/6/6\uff0c\u5f00\u5c40\u5f03\u724c\u6b21\u6570\u6539\u4e3a 6\uff0c\u4e0d\u518d\u6bcf\u56de\u5408\u989d\u5916\u589e\u52a0\u5f03\u724c\u3002"
+  } : {
+    giant: "Start with 3,500 total score, 7 discard uses, and +1 multiplier on every hand. Choose no normal effects in rounds 2-5. After each round, lose the greater of 1.5x the lowest round score or 65% of the highest, down to zero. Only one Giant per game.",
+    dice: "Replace the base hand multiplier each round with your highest custom-die roll; effect multipliers are added afterward. Every three x3 rolls grant an extra roll. Odds: x3 20%, x4 22%, x5 21%, x6 14%, x7 8.5%, x8 6%, x10 3.5%, x12 2.5%, x15 1.5%, x20 1%.",
+    "big-short": "Short another player for -20/-50/-80/-100/-150 round score. A correct lowest-score prediction grants 50/100/150/200/300 plus streak rewards; a miss costs you 50/80/80/80/80 total score.",
+    "going-long": "Go long any player, including yourself, for +20/+50/+80/+100/+150 round score. A correct highest-score prediction grants 50/100/150/200/300 plus streak rewards.",
+    "fate-collector": "The first time you play each new hand type, gain 20/80/150/250/350 round score for your 1st-5th collected type.",
+    clod: "Your hand sizes become 4/5/6/6/6 in rounds 1-5 and you start with 6 discard uses. You no longer gain an extra discard each round."
+  };
+  if (descriptions[kind]) return descriptions[kind];
   if (isZh()) {
     if (kind === "giant") return "开局获得 3500 总分；第 2-5 回合不能选择普通特效。每回合结算后总分扣除 max(最低回合分×1.5, 最高回合分×65%)，最低扣至 0。每局最多一位巨人。";
     if (kind === "dice") return "每回合掷非六面骰，以本回合最大结果替换基础牌型倍率，普通特效倍率继续加算。初始 1 枚骰子，特定重发/镜像特效会永久增加骰子；每三次掷出 x3 获得一次额外投掷。概率：x3 18%、x4 21%、x5 21%、x6 15%、x7 9%、x8 7%、x10 4%、x12 2.5%、x15 1.5%、x20 1%。";
@@ -3500,6 +3696,8 @@ function battleEffectName(effect) {
   if (effect.kind === "big-short-target") return isZh() ? "做空目标" : "Short target";
   if (effect.kind === "going-long-target") return isZh() ? "做多目标" : "Long target";
   if (effect.kind === "giant-penalty") return isZh() ? "巨人负担" : "Giant burden";
+  if (effect.kind === "big-short-miss") return isZh() ? "\u505a\u7a7a\u5931\u8d25" : "Big Short miss";
+  if (effect.kind === "fate-giant") return isZh() ? "\u5de8\u4eba\u500d\u7387" : "Giant multiplier";
   return effect.kind || "";
 }
 
@@ -3566,6 +3764,9 @@ function battleEffectDescription(effect) {
 function battleBalanceEffectDescription(effect) {
   if (!effect) return "";
   const suit = battleSuitName(effect.suit);
+  if (effect.kind === "rambo") return isZh()
+    ? "\u7ea2\u6e29\u706b\u70e4\uff1a20 \u79d2\u5185\u51fa\u724c\u65f6\u8ba1\u5206\u70b9\u6570 +15\u3001\u500d\u7387 +1\uff1b10 \u79d2\u5185\u51fa\u724c\u65f6\u6539\u4e3a\u8ba1\u5206\u70b9\u6570 +30\u3001\u500d\u7387 +3\u3002"
+    : "Rambo: play within 20 seconds for +15 chips and +1 mult; play within 10 seconds for +30 chips and +3 mult instead.";
   if (effect.kind === "suit-chip") return isZh()
     ? `${suit}点数增强：按本次五张牌的同花色数量，获得 max(8, 4×匹配张数) 点，最高 20 点；本回合倍率 +1。`
     : `${suit} chip boost: gain max(8, 4 x matching cards) chips, capped at 20, and +1 mult this round.`;

@@ -33,13 +33,13 @@ const HANDS = [
 
 const HAND_BY_ID = new Map(HANDS.map((hand) => [hand.id, hand]));
 const FATE_DICE_OUTCOMES = [
-  { value: 3, probability: 0.18 },
-  { value: 4, probability: 0.21 },
+  { value: 3, probability: 0.2 },
+  { value: 4, probability: 0.22 },
   { value: 5, probability: 0.21 },
-  { value: 6, probability: 0.15 },
-  { value: 7, probability: 0.09 },
-  { value: 8, probability: 0.07 },
-  { value: 10, probability: 0.04 },
+  { value: 6, probability: 0.14 },
+  { value: 7, probability: 0.085 },
+  { value: 8, probability: 0.06 },
+  { value: 10, probability: 0.035 },
   { value: 12, probability: 0.025 },
   { value: 15, probability: 0.015 },
   { value: 20, probability: 0.01 }
@@ -163,7 +163,7 @@ function createEffectOptions(options = {}) {
     () => ({ kind: "goelia" }),
     () => ({ kind: "shadow-targeting" }),
     () => ({ kind: "chaos-dice" }),
-    () => ({ kind: "rambo", amount: 10, seconds: 20 }),
+    () => ({ kind: "rambo", seconds: 20 }),
     () => ({ kind: "tomato-king" }),
     () => ({ kind: "tomato-shooter" }),
     () => ({ kind: "runaans-hurricane" }),
@@ -293,6 +293,8 @@ function scorePlay(cards, effect, context = {}) {
     finalScoreFactors.push({ kind, factor });
   }
 
+  addMultiplierBonus("fate-giant", Math.max(0, Number(context.fateMultiplierBonus) || 0));
+
   for (let cardIndex = 0; cardIndex < cards.length; cardIndex += 1) {
     const card = cards[cardIndex];
     const scoresHand = scoringIndexes.has(cardIndex);
@@ -410,9 +412,15 @@ function scorePlay(cards, effect, context = {}) {
   if (effect?.kind === "draven") {
     addMultiplierBonus(effect.kind, 3.5);
   }
-  if (effect?.kind === "rambo" && Number(context.turnElapsedMs) <= (effect.seconds || 20) * 1000) {
-    addGlobalChipBonus(effect.kind, effect.amount || 10);
-    addScoreBonus(effect.kind, 150);
+  if (effect?.kind === "rambo") {
+    const elapsedMs = Math.max(0, Number(context.turnElapsedMs) || 0);
+    if (elapsedMs <= 10000) {
+      addGlobalChipBonus(effect.kind, 30);
+      addMultiplierBonus(effect.kind, 3);
+    } else if (elapsedMs <= 20000) {
+      addGlobalChipBonus(effect.kind, 15);
+      addMultiplierBonus(effect.kind, 1);
+    }
   }
   if (effect?.kind === "tomato-king") {
     addScoreBonus(effect.kind, Math.max(0, Number(effect.tomatoHits) || 0) * tomatoFinalScoreMultiplier);
@@ -605,7 +613,7 @@ function fateDiceValueForRoll(rawRoll) {
   const roll = Math.min(1 - Number.EPSILON, Math.max(0, Number(rawRoll) || 0));
   let boundary = 0;
   for (const outcome of FATE_DICE_OUTCOMES) {
-    boundary += outcome.probability;
+    boundary = Math.round((boundary + outcome.probability) * 1000000000000) / 1000000000000;
     if (roll < boundary) return outcome.value;
   }
   return FATE_DICE_OUTCOMES[FATE_DICE_OUTCOMES.length - 1].value;
