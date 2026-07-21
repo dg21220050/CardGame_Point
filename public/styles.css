@@ -1025,6 +1025,7 @@ input:focus {
 }
 
 .score-title {
+  position: relative;
   color: #fff5c9;
   font-size: clamp(1rem, 1.7vw, 1.35rem);
   font-weight: 900;
@@ -1033,6 +1034,37 @@ input:focus {
   border-radius: 6px;
   background: rgba(0, 0, 0, 0.22);
   transform: translateY(-3rem);
+}
+
+.royal-victory-suits {
+  position: absolute;
+  left: calc(100% + 0.45rem);
+  top: 50%;
+  display: inline-flex;
+  gap: 0.22rem;
+  transform: translateY(-50%);
+  white-space: nowrap;
+}
+
+.royal-suit-icon {
+  display: grid;
+  width: 1.45rem;
+  height: 1.45rem;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.9);
+  font-size: 1rem;
+  line-height: 1;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.3);
+}
+
+.royal-suit-icon.is-red {
+  color: #bd202b;
+}
+
+.royal-suit-icon.is-black {
+  color: #121818;
 }
 
 .score-seat-grid {
@@ -1466,6 +1498,17 @@ input:focus {
 
 .fate-roll-button {
   flex: 0 0 auto;
+}
+
+.giant-defense-controls {
+  border-color: rgba(89, 166, 178, 0.64);
+  background: rgba(21, 72, 77, 0.34);
+}
+
+.giant-defense-button {
+  border-color: #9adce3;
+  color: #102428;
+  background: #9adce3;
 }
 
 .fate-target-controls {

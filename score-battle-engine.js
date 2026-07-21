@@ -116,6 +116,25 @@ function isRoyalFlush(cards) {
   return cards.map((card) => card.rank).sort((left, right) => left - right).join(",") === "10,11,12,13,14";
 }
 
+function royalFlushWins(cards, winningSuits) {
+  if (!isRoyalFlush(cards)) return false;
+  const allowed = new Set(Array.isArray(winningSuits) ? winningSuits : []);
+  return allowed.has(cards[0].suit);
+}
+
+function giantFatePenalty(roundScores) {
+  const scores = (Array.isArray(roundScores) ? roundScores : [])
+    .map((score) => Math.max(0, Number(score) || 0));
+  if (!scores.length) return 0;
+  const lowest = Math.min(...scores);
+  const highest = Math.max(...scores);
+  return Math.max(0, Math.round(Math.max(lowest * 1.3, highest * 0.55)));
+}
+
+function giantDefenseScore(roundScore) {
+  return Math.floor(Math.max(0, Number(roundScore) || 0) * 0.5);
+}
+
 function scoringIndexesForHand(cards, handId, rankCounts) {
   if (["straight", "flush", "full-house", "straight-flush"].includes(handId)) {
     return cards.map((_, index) => index);
@@ -691,12 +710,15 @@ module.exports = {
   createEffectOptions,
   effectAllowedInRound,
   fateDiceValueForRoll,
+  giantDefenseScore,
+  giantFatePenalty,
   criticalProfileForEffects,
   displayCode,
   findBestPlay,
   mirrorRankValue,
   rankValue,
   rankSymbol,
+  royalFlushWins,
   scorePlay,
   shuffle,
   tomatoCountRouting,

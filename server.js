@@ -670,6 +670,16 @@ async function handleApi(req, res, url, method) {
       return;
     }
 
+    if (method === "POST" && pathParts[3] === "fate-giant-defense") {
+      const result = useScoreGiantDefense(table, user.id);
+      if (!result.ok) {
+        sendJson(res, 400, { error: result.error });
+        return;
+      }
+      sendJson(res, 200, { table: scoreTableView(table, user) });
+      return;
+    }
+
     if (method === "POST" && pathParts[3] === "discard") {
       const body = await readJsonBody(req);
       const result = discardScoreCards(table, user.id, body.cardCodes);
@@ -1983,6 +1993,7 @@ function createScoreTable(rawName, user) {
     scoreTomatoHits: [],
     historyRecorded: false,
     giantFateSeatId: null,
+    royalVictorySuits: [],
     results: [],
     chat: [],
     messages: [`${user.username} opened a score battle table.`]
@@ -2043,6 +2054,10 @@ function createScoreSeatState(options) {
     fateTargetSeatId: null,
     fatePredictionStreak: 0,
     fateCollectedHandIds: [],
+    fateGiantDefenseUsed: false,
+    fateGiantDefenseRound: 0,
+    fateGiantDefenseResolvedRound: 0,
+    fateLastGiantPenalty: 0,
     submitted: false,
     roundScore: 0,
     totalScore: 0,
@@ -2171,6 +2186,7 @@ function startScoreBattle(table) {
   table.scoreTomatoHits = [];
   table.historyRecorded = false;
   table.giantFateSeatId = null;
+  table.royalVictorySuits = scoreBattle.shuffle(scoreBattle.SUITS).slice(0, 2);
   table.standings = [];
   table.results = [];
   for (const seat of table.seats) {
@@ -2197,6 +2213,10 @@ function startScoreBattle(table) {
     seat.fateTargetSeatId = null;
     seat.fatePredictionStreak = 0;
     seat.fateCollectedHandIds = [];
+    seat.fateGiantDefenseUsed = false;
+    seat.fateGiantDefenseRound = 0;
+    seat.fateGiantDefenseResolvedRound = 0;
+    seat.fateLastGiantPenalty = 0;
     seat.submitted = false;
     seat.roundScore = 0;
     seat.totalScore = 0;
@@ -2450,7 +2470,7 @@ function chooseScoreFateForSeat(table, seat, fateId) {
   if (fate.kind === "giant") {
     table.giantFateSeatId = seat.seatId;
     seat.totalScore += 3500;
-    seat.discardUsesLeft = 7;
+    seat.discardUsesLeft = 8;
   } else if (fate.kind === "dice") {
     seat.fateDiceCount = 1;
     resetScoreFateDiceRound(seat);
@@ -2518,6 +2538,33 @@ function chooseScoreFateTargetForSeat(table, seat, targetSeatId) {
 
 function scoreFateNeedsTarget(seat) {
   return ["big-short", "going-long"].includes(seat?.fate?.kind);
+}
+
+function useScoreGiantDefense(table, userId) {
+  const seat = activeScoreSeats(table).find((entry) => !isScoreBotSeat(entry) && entry.userId === userId);
+  if (!seat) return { ok: false, error: "You are watching this score battle." };
+  return useScoreGiantDefenseForSeat(table, seat);
+}
+
+function useScoreGiantDefenseForSeat(table, seat) {
+  if (table.phase !== "play-select" || table.round < 1 || table.round > 4 || seat.submitted) {
+    return { ok: false, error: "The Giant's Defense Stance is available only in rounds 1-4 before playing." };
+  }
+  if (!isCurrentScoreTurn(table, seat)) return { ok: false, error: "Wait for your turn to use Defense Stance." };
+  if (seat.fate?.kind !== "giant") return { ok: false, error: "Only The Giant can use Defense Stance." };
+  if (seat.fateGiantDefenseUsed) return { ok: false, error: "Defense Stance was already used this game." };
+  seat.fateGiantDefenseUsed = true;
+  seat.fateGiantDefenseRound = table.round;
+  table.messages.unshift(`${seat.displayName} entered Defense Stance for round ${table.round}.`);
+  return { ok: true };
+}
+
+function isScoreGiantDefenseActive(table, seat) {
+  return Boolean(
+    seat?.fate?.kind === "giant"
+    && seat.fateGiantDefenseUsed
+    && Number(seat.fateGiantDefenseRound) === Number(table.round)
+  );
 }
 
 function scoreFateReadyForPlay(seat) {
@@ -3071,7 +3118,9 @@ function recordScorePlay(table, seat, cards, automatic) {
   table.currentRoundLeaderSeatIds = scoreRoundLeaderSeatIds(table);
   const automaticText = automatic === "one-click" ? " with one-click play" : automatic ? " automatically" : "";
   table.messages.unshift(`${seat.displayName} scored ${result.score} with ${result.handName}${automaticText}.`);
-  if (result.isRoyalFlush) finishScoreBattle(table, false, seat.seatId);
+  if (scoreBattle.royalFlushWins(cards, table.royalVictorySuits)) {
+    finishScoreBattle(table, false, seat.seatId);
+  }
 }
 
 function applyScoreFateCollectorBonus(seat, result) {
@@ -3216,6 +3265,8 @@ function applyScoreFatePredictionBonuses(table) {
     adjustScoreRoundScore(table, target, direction * adjustment, `${seat.fate.kind}-target`, seat.displayName);
   }
 
+  applyScoreGiantDefense(table);
+
   const lowest = active.length ? Math.min(...active.map((seat) => Number(seat.roundScore) || 0)) : 0;
   const highest = Math.max(...active.map((seat) => Number(seat.roundScore) || 0), 0);
   for (const seat of predictors) {
@@ -3266,14 +3317,25 @@ function adjustScoreRoundScore(table, seat, amount, kind, sourceName) {
   return actual;
 }
 
+function applyScoreGiantDefense(table) {
+  for (const seat of activeScoreSeats(table)) {
+    if (!isScoreGiantDefenseActive(table, seat)) continue;
+    if (Number(seat.fateGiantDefenseResolvedRound) === Number(table.round)) continue;
+    const previous = Math.max(0, Number(seat.roundScore) || 0);
+    const defendedScore = scoreBattle.giantDefenseScore(previous);
+    adjustScoreRoundScore(table, seat, defendedScore - previous, "giant-defense", seat.displayName);
+    seat.fateGiantDefenseResolvedRound = table.round;
+    table.messages.unshift(`${seat.displayName}'s Defense Stance reduced the round score from ${previous} to ${defendedScore} and blocked The Giant's burden.`);
+  }
+}
+
 function applyScoreGiantPenalties(table) {
   const active = activeScoreSeats(table);
   if (!active.length) return;
-  const lowest = Math.min(...active.map((seat) => Number(seat.roundScore) || 0));
-  const highest = Math.max(...active.map((seat) => Number(seat.roundScore) || 0));
-  const penalty = Math.max(0, Math.round(Math.max(lowest * 1.5, highest * 0.65)));
+  const penalty = scoreBattle.giantFatePenalty(active.map((seat) => seat.roundScore));
   for (const seat of active) {
     if (seat.fate?.kind !== "giant") continue;
+    if (isScoreGiantDefenseActive(table, seat)) continue;
     const previous = Math.max(0, Number(seat.totalScore) || 0);
     const next = Math.max(0, previous - penalty);
     seat.totalScore = next;
@@ -3308,6 +3370,9 @@ function processScoreBots(table) {
 
 function playScoreBotTurn(table, seat) {
   chooseScoreBotFate(table, seat);
+  if (seat.fate?.kind === "giant" && table.round === 4 && !seat.fateGiantDefenseUsed) {
+    useScoreGiantDefenseForSeat(table, seat);
+  }
   chooseScoreBotEffect(table, seat);
   const fateReady = prepareScoreFateForPlay(table, seat, {
     autoChooseFate: true,
@@ -3827,6 +3892,7 @@ function scoreTableView(table, user) {
     currentTurnName: table.currentTurnSeatId ? table.seats.find((seat) => seat.seatId === table.currentTurnSeatId)?.displayName || "" : "",
     currentRoundLeaderSeatIds: table.currentRoundLeaderSeatIds || [],
     previousRoundLeaderSeatIds: table.previousRoundLeaderSeatIds || [],
+    royalVictorySuits: Array.isArray(table.royalVictorySuits) ? table.royalVictorySuits.slice(0, 2) : [],
     roundEffects: (table.roundEffects || []).map((effect) => ({
       kind: effect.kind,
       suit: effect.suit,
@@ -3909,6 +3975,15 @@ function scoreSeatForClient(table, seat, youSeat) {
     requiresFateChoice: Boolean(isYou && isScoreTurn && table.round === 1 && !seat.fateChosen),
     canRollFateDice: Boolean(isYou && isScoreTurn && seat.fate?.kind === "dice" && seat.fateDiceRollsLeft > 0),
     canChooseFateTarget: Boolean(isYou && isScoreTurn && scoreFateNeedsTarget(seat)),
+    canUseGiantDefense: Boolean(
+      isYou
+      && isScoreTurn
+      && table.round >= 1
+      && table.round <= 4
+      && seat.fate?.kind === "giant"
+      && !seat.fateGiantDefenseUsed
+      && !seat.submitted
+    ),
     canAutoPlay: Boolean(isYou && isScoreTurn && seat.fateChosen && (!scoreFateNeedsTarget(seat) || seat.fateTargetSeatId)),
     criticalProfile,
     attackSpeedProfile,
@@ -3945,7 +4020,9 @@ function scoreFateForClient(table, seat) {
     predictionStreak: Math.max(0, Number(seat.fatePredictionStreak) || 0),
     lastPredictionCorrect: seat.fateLastPredictionCorrect ?? null,
     collectedHandCount: (seat.fateCollectedHandIds || []).length,
-    lastGiantPenalty: Math.max(0, Number(seat.fateLastGiantPenalty) || 0)
+    lastGiantPenalty: Math.max(0, Number(seat.fateLastGiantPenalty) || 0),
+    giantDefenseUsed: Boolean(seat.fateGiantDefenseUsed),
+    giantDefenseActive: isScoreGiantDefenseActive(table, seat)
   };
 }
 

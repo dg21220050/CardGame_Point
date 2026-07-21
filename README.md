@@ -57,7 +57,7 @@ The stop script only shuts down the CardGame Point server started from this fold
 - Interactive effects may change hands or the community board immediately, so later players in the same round see and score against the changed state.
 - Score Battle effects use the current balance rules shown in the in-game scoring rules panel.
 - Scores use the selected cards' point total (Ace is 15), hand multiplier, and effect modifiers. The five round scores are added together.
-- Playing a same-suit 10, J, Q, K, and A Royal Flush immediately wins the game in any round.
+- Two Royal Flush suits are selected randomly at the start of each game and shown beside the round counter. A 10, J, Q, K, A Royal Flush in either selected suit wins immediately; the other suits score as normal Straight Flushes.
 - Tomato King, Tomato Shooter, and Tempered Tomato multiply their count bonus by the lower of the played hand's base multiplier and 2.
 - Score Battle tomatoes can be thrown only during another player's active turn, not during your own turn or round settlement.
 - Submitted plays are revealed to all players with community cards highlighted and a scoring breakdown shown to the scoring player.

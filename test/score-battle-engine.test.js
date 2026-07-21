@@ -7,6 +7,9 @@ const {
   effectAllowedInRound,
   fateDiceValueForRoll,
   findBestPlay,
+  giantDefenseScore,
+  giantFatePenalty,
+  royalFlushWins,
   scorePlay,
   tomatoCountRouting,
   tomatoThrowAllowed
@@ -151,6 +154,21 @@ test("a 10-J-Q-K-A straight flush is marked as an instant-win Royal Flush", () =
     assert.equal(royal.isRoyalFlush, true);
   }
   assert.equal(scorePlay(cards(["9S", "TS", "JS", "QS", "KS"])).isRoyalFlush, false);
+});
+
+test("only the two selected Royal Flush suits win instantly", () => {
+  const winningSuits = ["H", "C"];
+  assert.equal(royalFlushWins(cards(["TH", "JH", "QH", "KH", "AH"]), winningSuits), true);
+  assert.equal(royalFlushWins(cards(["TC", "JC", "QC", "KC", "AC"]), winningSuits), true);
+  assert.equal(royalFlushWins(cards(["TS", "JS", "QS", "KS", "AS"]), winningSuits), false);
+  assert.equal(royalFlushWins(cards(["TD", "JD", "QD", "KD", "AD"]), winningSuits), false);
+});
+
+test("The Giant burden and Defense Stance use the new balance values", () => {
+  assert.equal(giantFatePenalty([100, 400]), 220);
+  assert.equal(giantFatePenalty([300, 400]), 390);
+  assert.equal(giantDefenseScore(401), 200);
+  assert.equal(giantDefenseScore(0), 0);
 });
 
 test("Dance of Illusions routes tomato counts to throws instead of self-hits", () => {
