@@ -3350,21 +3350,21 @@ function applyScoreGiantAreaEffects(table, settledHandScores) {
   const giant = active.find((seat) => seat.fate?.kind === "giant");
   if (!giant) return;
   const giantHandScore = Math.max(0, Number(settledHandScores?.get(giant.seatId)) || 0);
-  const aoePenalty = scoreBattle.giantAoePenalty(giantHandScore);
-  for (const seat of active) {
-    if (seat.seatId === giant.seatId && isScoreGiantDefenseActive(table, giant)) continue;
-    const deducted = deductScoreTotal(seat, aoePenalty, "giant-aoe", giant.displayName);
+  const plan = scoreBattle.giantAreaEffectPlan(active, giant.seatId, giantHandScore);
+  const seatsById = new Map(active.map((seat) => [seat.seatId, seat]));
+  for (const seatId of plan.aoeTargetSeatIds) {
+    const seat = seatsById.get(seatId);
+    if (!seat) continue;
+    const deducted = deductScoreTotal(seat, plan.aoePenalty, "giant-aoe", giant.displayName);
     if (deducted > 0) {
       table.messages.unshift(`${seat.displayName} lost ${deducted} total points to ${giant.displayName}'s AOE.`);
     }
   }
 
-  const smashCandidates = active.filter((seat) => seat.seatId !== giant.seatId);
-  const highest = Math.max(...smashCandidates.map((seat) => Number(seat.roundScore) || 0), 0);
-  const smashPenalty = scoreBattle.giantSmashPenalty(giantHandScore);
-  for (const seat of smashCandidates) {
-    if ((Number(seat.roundScore) || 0) !== highest) continue;
-    const deducted = deductScoreTotal(seat, smashPenalty, "giant-smash", giant.displayName);
+  for (const seatId of plan.smashTargetSeatIds) {
+    const seat = seatsById.get(seatId);
+    if (!seat) continue;
+    const deducted = deductScoreTotal(seat, plan.smashPenalty, "giant-smash", giant.displayName);
     if (deducted > 0) {
       table.messages.unshift(`${seat.displayName} lost ${deducted} total points to ${giant.displayName}'s Smash.`);
     }
