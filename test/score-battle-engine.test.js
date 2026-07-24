@@ -11,6 +11,7 @@ const {
   fatePredictionCorrect,
   fateTargetAdjustment,
   findBestPlay,
+  giantAreaEffectPlan,
   giantAoePenalty,
   giantFatePenalty,
   giantKillerActiveInRound,
@@ -177,6 +178,19 @@ test("The Giant burden, AOE, and Smash use the new balance values", () => {
   assert.equal(giantAoePenalty(401), 200);
   assert.equal(giantAoePenalty(0), 0);
   assert.equal(giantSmashPenalty(401), 401);
+});
+
+test("The Giant's AOE and Smash only target non-Giant players", () => {
+  const plan = giantAreaEffectPlan([
+    { seatId: "giant", roundScore: 900 },
+    { seatId: "first-opponent", roundScore: 300 },
+    { seatId: "top-opponent", roundScore: 500 }
+  ], "giant", 401);
+
+  assert.equal(plan.aoePenalty, 200);
+  assert.deepEqual(plan.aoeTargetSeatIds, ["first-opponent", "top-opponent"]);
+  assert.equal(plan.smashPenalty, 401);
+  assert.deepEqual(plan.smashTargetSeatIds, ["top-opponent"]);
 });
 
 test("FATE target and collection rewards use their separate balance values", () => {
