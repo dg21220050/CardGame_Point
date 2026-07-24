@@ -1278,6 +1278,13 @@ input:focus {
   color: #fff5c9;
 }
 
+.score-giant-deduction-line {
+  margin: -0.08rem 0 0.32rem;
+  color: #ffb4ae;
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
 .selected-effect-line {
   margin: 0.3rem 0;
   padding: 0.3rem 0.48rem;
