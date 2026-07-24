@@ -2055,6 +2055,9 @@ function createScoreSeatState(options) {
     fateGiantDefenseUsed: false,
     fateGiantDefenseRound: 0,
     fateLastGiantPenalty: 0,
+    fateGiantDamageDealt: 0,
+    lastGiantDeduction: 0,
+    lastGiantDeductionRound: 0,
     submitted: false,
     roundScore: 0,
     totalScore: 0,
@@ -2213,6 +2216,9 @@ function startScoreBattle(table) {
     seat.fateGiantDefenseUsed = false;
     seat.fateGiantDefenseRound = 0;
     seat.fateLastGiantPenalty = 0;
+    seat.fateGiantDamageDealt = 0;
+    seat.lastGiantDeduction = 0;
+    seat.lastGiantDeductionRound = 0;
     seat.submitted = false;
     seat.roundScore = 0;
     seat.totalScore = 0;
@@ -3263,8 +3269,7 @@ function applyScorePostRoundBonuses(table) {
     table.messages.unshift(`${seat.displayName} gained 3 discard uses from Matthew effect.`);
   }
 
-  applyScoreGiantAreaEffects(table, settledHandScores);
-  applyScoreGiantPenalties(table);
+  applyScoreGiantSettlement(table, settledHandScores);
 }
 
 function applyScoreFatePredictionBonuses(table) {
@@ -3345,17 +3350,32 @@ function deductScoreTotal(seat, amount, kind, sourceName) {
   return actual;
 }
 
-function applyScoreGiantAreaEffects(table, settledHandScores) {
+function applyScoreGiantSettlement(table, settledHandScores) {
   const active = activeScoreSeats(table);
   const giant = active.find((seat) => seat.fate?.kind === "giant");
   if (!giant) return;
+  for (const seat of active) {
+    seat.lastGiantDeduction = 0;
+    seat.lastGiantDeductionRound = table.round;
+  }
   const giantHandScore = Math.max(0, Number(settledHandScores?.get(giant.seatId)) || 0);
-  const plan = scoreBattle.giantAreaEffectPlan(active, giant.seatId, giantHandScore);
+  const plan = scoreBattle.giantSettlementPlan(active, giant.seatId, giantHandScore);
   const seatsById = new Map(active.map((seat) => [seat.seatId, seat]));
+
+  giant.fateLastGiantPenalty = 0;
+  if (!isScoreGiantDefenseActive(table, giant)) {
+    const burdenDeducted = deductScoreTotal(giant, plan.burdenPenalty, "giant-penalty", giant.displayName);
+    giant.fateLastGiantPenalty = burdenDeducted;
+    giant.lastGiantDeduction += burdenDeducted;
+    table.messages.unshift(`${giant.displayName} lost ${burdenDeducted} total points to The Giant's burden.`);
+  }
+
   for (const seatId of plan.aoeTargetSeatIds) {
     const seat = seatsById.get(seatId);
     if (!seat) continue;
     const deducted = deductScoreTotal(seat, plan.aoePenalty, "giant-aoe", giant.displayName);
+    seat.lastGiantDeduction += deducted;
+    giant.fateGiantDamageDealt = Math.max(0, Number(giant.fateGiantDamageDealt) || 0) + deducted;
     if (deducted > 0) {
       table.messages.unshift(`${seat.displayName} lost ${deducted} total points to ${giant.displayName}'s AOE.`);
     }
@@ -3365,22 +3385,11 @@ function applyScoreGiantAreaEffects(table, settledHandScores) {
     const seat = seatsById.get(seatId);
     if (!seat) continue;
     const deducted = deductScoreTotal(seat, plan.smashPenalty, "giant-smash", giant.displayName);
+    seat.lastGiantDeduction += deducted;
+    giant.fateGiantDamageDealt = Math.max(0, Number(giant.fateGiantDamageDealt) || 0) + deducted;
     if (deducted > 0) {
       table.messages.unshift(`${seat.displayName} lost ${deducted} total points to ${giant.displayName}'s Smash.`);
     }
-  }
-}
-
-function applyScoreGiantPenalties(table) {
-  const active = activeScoreSeats(table);
-  if (!active.length) return;
-  const penalty = scoreBattle.giantFatePenalty(active.map((seat) => seat.roundScore));
-  for (const seat of active) {
-    if (seat.fate?.kind !== "giant") continue;
-    if (isScoreGiantDefenseActive(table, seat)) continue;
-    const deducted = deductScoreTotal(seat, penalty, "giant-penalty", seat.displayName);
-    seat.fateLastGiantPenalty = deducted;
-    table.messages.unshift(`${seat.displayName} lost ${deducted} total points to The Giant's burden.`);
   }
 }
 
@@ -4003,6 +4012,8 @@ function scoreSeatForClient(table, seat, youSeat) {
     submitted: seat.submitted,
     roundScore: seat.roundScore,
     totalScore: seat.totalScore,
+    lastGiantDeduction: Math.max(0, Number(seat.lastGiantDeduction) || 0),
+    lastGiantDeductionRound: Math.max(0, Number(seat.lastGiantDeductionRound) || 0),
     tomatoCounts,
     persistentEffects: scorePersistentEffectsForClient(seat),
     fate: scoreFateForClient(table, seat),
@@ -4058,6 +4069,7 @@ function scoreFateForClient(table, seat) {
     collectedHandCount: (seat.fateCollectedHandIds || []).length,
     collectedHandIds: (seat.fateCollectedHandIds || []).slice(),
     lastGiantPenalty: Math.max(0, Number(seat.fateLastGiantPenalty) || 0),
+    damageDealt: Math.max(0, Number(seat.fateGiantDamageDealt) || 0),
     giantDefenseUsed: Boolean(seat.fateGiantDefenseUsed),
     giantDefenseActive: isScoreGiantDefenseActive(table, seat)
   };
