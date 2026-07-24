@@ -145,6 +145,22 @@ function giantSmashPenalty(giantHandScore) {
   return Math.floor(Math.max(0, Number(giantHandScore) || 0));
 }
 
+function giantAreaEffectPlan(seats, giantSeatId, giantHandScore) {
+  const opponents = (Array.isArray(seats) ? seats : [])
+    .filter((seat) => seat?.seatId && seat.seatId !== giantSeatId);
+  const highestOpponentScore = opponents.length
+    ? Math.max(...opponents.map((seat) => Number(seat.roundScore) || 0))
+    : 0;
+  return {
+    aoePenalty: giantAoePenalty(giantHandScore),
+    aoeTargetSeatIds: opponents.map((seat) => seat.seatId),
+    smashPenalty: giantSmashPenalty(giantHandScore),
+    smashTargetSeatIds: opponents
+      .filter((seat) => (Number(seat.roundScore) || 0) === highestOpponentScore)
+      .map((seat) => seat.seatId)
+  };
+}
+
 function giantKillerActiveInRound(untilRound, round) {
   const limit = Math.max(0, Number(untilRound) || 0);
   const current = Math.max(0, Number(round) || 0);
@@ -749,6 +765,7 @@ module.exports = {
   fateDiceValueForRoll,
   fatePredictionCorrect,
   fateTargetAdjustment,
+  giantAreaEffectPlan,
   giantAoePenalty,
   giantFatePenalty,
   giantKillerActiveInRound,
