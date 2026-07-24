@@ -11,11 +11,11 @@ const {
   fatePredictionCorrect,
   fateTargetAdjustment,
   findBestPlay,
-  giantAreaEffectPlan,
   giantAoePenalty,
   giantFatePenalty,
   giantKillerActiveInRound,
   giantKillerScoreFactor,
+  giantSettlementPlan,
   giantSmashPenalty,
   royalFlushWins,
   scorePlay,
@@ -181,12 +181,13 @@ test("The Giant burden, AOE, and Smash use the new balance values", () => {
 });
 
 test("The Giant's AOE and Smash only target non-Giant players", () => {
-  const plan = giantAreaEffectPlan([
+  const plan = giantSettlementPlan([
     { seatId: "giant", roundScore: 900 },
     { seatId: "first-opponent", roundScore: 300 },
     { seatId: "top-opponent", roundScore: 500 }
   ], "giant", 401);
 
+  assert.equal(plan.burdenPenalty, 390);
   assert.equal(plan.aoePenalty, 200);
   assert.deepEqual(plan.aoeTargetSeatIds, ["first-opponent", "top-opponent"]);
   assert.equal(plan.smashPenalty, 401);
