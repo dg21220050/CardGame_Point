@@ -1,18 +1,21 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
+  FATE_DICE_OUTCOMES,
   createDeck,
   createEffectOptions,
   criticalProfileForEffects,
   effectAllowedInRound,
   fateCollectorBonus,
   fateDiceValueForRoll,
+  fatePredictionCorrect,
   fateTargetAdjustment,
   findBestPlay,
-  giantDefenseScore,
+  giantAoePenalty,
   giantFatePenalty,
   giantKillerActiveInRound,
   giantKillerScoreFactor,
+  giantSmashPenalty,
   royalFlushWins,
   scorePlay,
   tomatoCountRouting,
@@ -126,7 +129,7 @@ test("action effects apply their chip, multiplier, and final-score stages", () =
   assert.equal(vigorous.score, 122);
 });
 
-test("tomato final-score bonuses use the hand multiplier capped at two", () => {
+test("tomato final-score bonuses cap the hand multiplier at one", () => {
   const high = cards(["2S", "5H", "7D", "9C", "JS"]);
   const king = scorePlay(high, { kind: "tomato-king", tomatoHits: 6 });
   assert.equal(king.scoreBonuses.find((bonus) => bonus.kind === "tomato-king").amount, 6);
@@ -137,7 +140,7 @@ test("tomato final-score bonuses use the hand multiplier capped at two", () => {
   assert.equal(shooter.score, 41);
 
   const twoPairKing = scorePlay(cards(["4S", "4H", "7D", "7C", "9C"]), { kind: "tomato-king", tomatoHits: 6 });
-  assert.equal(twoPairKing.scoreBonuses.find((bonus) => bonus.kind === "tomato-king").amount, 12);
+  assert.equal(twoPairKing.scoreBonuses.find((bonus) => bonus.kind === "tomato-king").amount, 6);
 
   const oldDays = scorePlay(high, { kind: "old-days-tomatoes", tomatoThrows: 10, tomatoHits: 999 });
   assert.equal(oldDays.globalChipBonuses.find((bonus) => bonus.kind === "old-days-tomatoes").amount, 5);
@@ -147,8 +150,8 @@ test("tomato final-score bonuses use the hand multiplier capped at two", () => {
     persistentEffects: { temperedTomato: true },
     tomatoCounts: { hitsTotal: 90, throwsTotal: 60 }
   });
-  assert.equal(tempered.scoreBonuses.find((bonus) => bonus.kind === "tempered-tomato").amount, 114);
-  assert.equal(tempered.score, 189);
+  assert.equal(tempered.scoreBonuses.find((bonus) => bonus.kind === "tempered-tomato").amount, 57);
+  assert.equal(tempered.score, 132);
 });
 
 test("a 10-J-Q-K-A straight flush is marked as an instant-win Royal Flush", () => {
@@ -168,11 +171,12 @@ test("only the single selected Royal Flush suit wins instantly", () => {
   assert.equal(royalFlushWins(cards(["TD", "JD", "QD", "KD", "AD"]), winningSuits), false);
 });
 
-test("The Giant burden and Defense Stance use the new balance values", () => {
+test("The Giant burden, AOE, and Smash use the new balance values", () => {
   assert.equal(giantFatePenalty([100, 400]), 200);
   assert.equal(giantFatePenalty([300, 400]), 390);
-  assert.equal(giantDefenseScore(401), 200);
-  assert.equal(giantDefenseScore(0), 0);
+  assert.equal(giantAoePenalty(401), 200);
+  assert.equal(giantAoePenalty(0), 0);
+  assert.equal(giantSmashPenalty(401), 401);
 });
 
 test("FATE target and collection rewards use their separate balance values", () => {
@@ -181,6 +185,14 @@ test("FATE target and collection rewards use their separate balance values", () 
   assert.equal(fateTargetAdjustment("going-long", 5), 100);
   assert.equal(fateCollectorBonus(4), 300);
   assert.equal(fateCollectorBonus(5), 400);
+});
+
+test("FATE predictions use the pre-adjustment scores from the current round", () => {
+  const currentRoundScores = [120, 150, 90];
+  assert.equal(fatePredictionCorrect("going-long", 120, currentRoundScores), false);
+  assert.equal(fatePredictionCorrect("going-long", 150, currentRoundScores), true);
+  assert.equal(fatePredictionCorrect("big-short", 90, currentRoundScores), true);
+  assert.equal(fatePredictionCorrect("big-short", 120, currentRoundScores), false);
 });
 
 test("Giant Killer uses the reduced gap multipliers", () => {
@@ -209,13 +221,20 @@ test("Score Battle tomatoes are allowed only during another player's active turn
 });
 
 test("FATE dice probabilities use the documented cumulative boundaries", () => {
+  assert.equal(FATE_DICE_OUTCOMES.reduce((sum, outcome) => sum + outcome.probability, 0), 1);
   assert.equal(fateDiceValueForRoll(0), 3);
-  assert.equal(fateDiceValueForRoll(0.199999), 3);
-  assert.equal(fateDiceValueForRoll(0.2), 4);
-  assert.equal(fateDiceValueForRoll(0.419999), 4);
-  assert.equal(fateDiceValueForRoll(0.42), 5);
-  assert.equal(fateDiceValueForRoll(0.769999), 6);
-  assert.equal(fateDiceValueForRoll(0.77), 7);
+  assert.equal(fateDiceValueForRoll(0.129999), 3);
+  assert.equal(fateDiceValueForRoll(0.13), 4);
+  assert.equal(fateDiceValueForRoll(0.309999), 4);
+  assert.equal(fateDiceValueForRoll(0.31), 5);
+  assert.equal(fateDiceValueForRoll(0.529999), 5);
+  assert.equal(fateDiceValueForRoll(0.53), 6);
+  assert.equal(fateDiceValueForRoll(0.749999), 6);
+  assert.equal(fateDiceValueForRoll(0.75), 7);
+  assert.equal(fateDiceValueForRoll(0.844999), 7);
+  assert.equal(fateDiceValueForRoll(0.845), 8);
+  assert.equal(fateDiceValueForRoll(0.914999), 8);
+  assert.equal(fateDiceValueForRoll(0.915), 10);
   assert.equal(fateDiceValueForRoll(0.99), 20);
   assert.equal(fateDiceValueForRoll(0.999999), 20);
 });
@@ -230,7 +249,7 @@ test("The Giant FATE adds one multiplier to every scored hand", () => {
   assert.deepEqual(result.multiplierBonuses, [{ kind: "fate-giant", amount: 1 }]);
 });
 
-test("The Dice FATE replaces only the base hand multiplier", () => {
+test("The Dice FATE keeps the higher of the hand and rolled multipliers", () => {
   const high = cards(["2S", "5H", "7D", "9C", "JS"]);
   const result = scorePlay(high, { kind: "suit-chip", suit: "S" }, { baseMultiplierOverride: 12 });
   assert.equal(result.naturalBaseMultiplier, 1);
@@ -238,6 +257,11 @@ test("The Dice FATE replaces only the base hand multiplier", () => {
   assert.equal(result.bonusMultiplier, 1);
   assert.equal(result.multiplier, 13);
   assert.equal(result.score, 338);
+
+  const straightFlush = scorePlay(cards(["9S", "TS", "JS", "QS", "KS"]), null, { baseMultiplierOverride: 3 });
+  assert.equal(straightFlush.naturalBaseMultiplier, 15);
+  assert.equal(straightFlush.baseMultiplier, 15);
+  assert.equal(straightFlush.multiplier, 15);
 });
 
 test("bread effects, Astral Body, and crit profiles follow the new rules", () => {

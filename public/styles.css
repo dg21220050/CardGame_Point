@@ -1310,6 +1310,23 @@ input:focus {
   color: rgba(255, 250, 217, 0.78);
 }
 
+.score-fate-collection {
+  display: flex;
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  gap: 0.24rem;
+  color: rgba(255, 250, 217, 0.78);
+}
+
+.score-fate-collection-item {
+  padding: 0.12rem 0.3rem;
+  border: 1px solid rgba(241, 198, 75, 0.42);
+  border-radius: 4px;
+  color: #fff5c9;
+  background: rgba(20, 15, 5, 0.26);
+  line-height: 1.2;
+}
+
 .fate-label {
   display: inline-flex;
   align-items: center;

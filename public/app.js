@@ -325,6 +325,12 @@ Object.assign(zhText, {
   "Halve this round's score and ignore The Giant's burden.": "\u672c\u56de\u5408\u5f97\u5206\u964d\u81f3 50%\uff0c\u5e76\u514d\u9664\u672c\u56de\u5408\u7684\u5de8\u4eba\u8d1f\u62c5\u3002"
 });
 
+Object.assign(zhText, {
+  "Collected hands": "\u5df2\u6536\u85cf\u724c\u578b",
+  "None yet": "\u6682\u65e0",
+  "Ignore all Giant deductions this round.": "\u672c\u56de\u5408\u4e0d\u53d7\u5de8\u4eba\u7684\u4efb\u4f55\u6263\u5206\u3002"
+});
+
 const zhPhase = {
   waiting: "等待中",
   preflop: "翻牌前",
@@ -2971,6 +2977,7 @@ function renderScoreFateLine(seat) {
   const fate = seat.fate;
   if (!fate) return "";
   const details = [];
+  let collection = "";
   if (fate.kind === "dice") {
     details.push(`x${fate.diceValue || "-"}`);
     details.push(`${t("Dice")} ${fate.diceCount || 1}`);
@@ -2980,7 +2987,13 @@ function renderScoreFateLine(seat) {
     if (fate.targetName) details.push(`${t("Target")}: ${fate.targetName}`);
     details.push(`${t("Prediction streak")} ${fate.predictionStreak || 0}`);
   }
-  if (fate.kind === "fate-collector") details.push(`${t("Collected hands")} ${fate.collectedHandCount || 0}/5`);
+  if (fate.kind === "fate-collector") {
+    const collectedHandIds = Array.isArray(fate.collectedHandIds) ? fate.collectedHandIds : [];
+    details.push(`${t("Collected hands")} ${fate.collectedHandCount || 0}/5`);
+    collection = el("span", { className: "score-fate-collection" }, collectedHandIds.length
+      ? collectedHandIds.map((handId) => el("span", { className: "score-fate-collection-item" }, [translateBattleHandId(handId)]))
+      : [t("None yet")]);
+  }
   if (fate.kind === "giant") {
     if (fate.giantDefenseActive) details.push(t("Defense active"));
     else if (fate.giantDefenseUsed) details.push(t("Defense used"));
@@ -3004,6 +3017,7 @@ function renderScoreFateLine(seat) {
     el("span", { className: "fate-label compact" }, ["FATE"]),
     el("strong", {}, [scoreFateName(fate)]),
     details.length ? el("span", {}, [details.join(" | ")]) : "",
+    collection,
     defenseButton
   ]);
 }
@@ -3638,6 +3652,21 @@ function translateBattleHand(handName) {
   return isZh() ? (zhText[handName] || handName) : handName;
 }
 
+function translateBattleHandId(handId) {
+  const names = {
+    "high-card": "High Card",
+    "one-pair": "One Pair",
+    "two-pair": "Two Pair",
+    "three-kind": "Three of a Kind",
+    straight: "Straight",
+    flush: "Flush",
+    "full-house": "Full House",
+    "four-kind": "Four of a Kind",
+    "straight-flush": "Straight Flush"
+  };
+  return translateBattleHand(names[handId] || handId);
+}
+
 function scoreFateName(fate) {
   const names = {
     giant: isZh() ? "巨人" : "The Giant",
@@ -3653,17 +3682,17 @@ function scoreFateName(fate) {
 function scoreFateDescription(fate) {
   const kind = fate?.kind;
   const descriptions = isZh() ? {
-    giant: "\u5f00\u5c40\u83b7\u5f97 3500 \u603b\u5206\u548c 8 \u6b21\u5f03\u724c\uff0c\u6240\u6709\u624b\u724c\u500d\u7387 +1\uff1b\u7b2c 2-5 \u56de\u5408\u4e0d\u80fd\u9009\u666e\u901a\u7279\u6548\u3002\u6bcf\u56de\u5408\u7ed3\u7b97\u540e\u603b\u5206\u6263\u9664 max(\u6700\u4f4e\u56de\u5408\u5206x1.3, \u6700\u9ad8\u56de\u5408\u5206x50%)\uff0c\u6700\u4f4e\u81f3 0\u3002\u7b2c 1-4 \u56de\u5408\u53ef\u5728\u51fa\u724c\u524d\u4f7f\u7528\u4e00\u6b21\u9632\u5fa1\u59ff\u6001\uff1a\u672c\u56de\u5408\u5206\u964d\u81f3 50%\uff0c\u4f46\u514d\u9664\u5de8\u4eba\u8d1f\u62c5\u3002\u6bcf\u5c40\u6700\u591a\u4e00\u4f4d\u5de8\u4eba\u3002",
-    dice: "\u6bcf\u56de\u5408\u4ee5\u6700\u5927\u9ab0\u5b50\u7ed3\u679c\u66ff\u6362\u57fa\u7840\u724c\u578b\u500d\u7387\uff0c\u7279\u6548\u500d\u7387\u7ee7\u7eed\u52a0\u7b97\u3002\u6bcf\u4e09\u6b21\u63b7\u51fa x3 \u83b7\u5f97\u989d\u5916\u4e00\u63b7\u3002\u6982\u7387\uff1ax3 20%\u3001x4 22%\u3001x5 21%\u3001x6 14%\u3001x7 8.5%\u3001x8 6%\u3001x10 3.5%\u3001x12 2.5%\u3001x15 1.5%\u3001x20 1%\u3002",
+    giant: "\u5f00\u5c40\u83b7\u5f97 3500 \u603b\u5206\u548c 8 \u6b21\u5f03\u724c\uff0c\u6240\u6709\u624b\u724c\u500d\u7387 +1\uff1b\u7b2c 2-5 \u56de\u5408\u4e0d\u80fd\u9009\u666e\u901a\u7279\u6548\u3002\u6bcf\u56de\u5408\u5de8\u4eba\u627f\u53d7 max(\u6700\u4f4e\u56de\u5408\u5206x1.3, \u6700\u9ad8\u56de\u5408\u5206x50%) \u603b\u5206\u6263\u9664\uff1bAOE \u4f7f\u6240\u6709\u73a9\u5bb6\u6263\u9664\u5de8\u4eba\u672c\u56de\u5408\u624b\u724c\u5f97\u5206\u7684 50%\uff0c\u731b\u51fb\u4f7f\u9664\u5de8\u4eba\u5916\u7684\u56de\u5408\u6700\u9ad8\u5206\u73a9\u5bb6\u518d\u6263\u9664\u8be5\u624b\u724c\u5f97\u5206\u7684 100%\u3002\u7b2c 1-5 \u56de\u5408\u53ef\u5728\u51fa\u724c\u524d\u4f7f\u7528\u4e00\u6b21\u9632\u5fa1\u59ff\u6001\uff0c\u4ec5\u4f7f\u81ea\u5df1\u672c\u56de\u5408\u514d\u53d7\u6263\u5206\uff0c\u4e0d\u964d\u4f4e\u56de\u5408\u5f97\u5206\u3002\u6bcf\u5c40\u6700\u591a\u4e00\u4f4d\u5de8\u4eba\u3002",
+    dice: "\u6bcf\u56de\u5408\u7684\u57fa\u7840\u500d\u7387\u53d6 max(\u624b\u724c\u724c\u578b\u500d\u7387, \u6700\u5927\u9ab0\u5b50\u70b9\u6570)\uff0c\u7279\u6548\u500d\u7387\u7ee7\u7eed\u52a0\u7b97\u3002\u6bcf\u4e09\u6b21\u63b7\u51fa x3 \u83b7\u5f97\u989d\u5916\u4e00\u63b7\u3002\u6982\u7387\uff1ax3 13%\u3001x4 18%\u3001x5 22%\u3001x6 22%\u3001x7 9.5%\u3001x8 7%\u3001x10 3.5%\u3001x12 2.5%\u3001x15 1.5%\u3001x20 1%\u3002",
     "big-short": "\u6bcf\u56de\u5408\u51fa\u724c\u524d\u505a\u7a7a\u53e6\u4e00\u4f4d\u73a9\u5bb6\uff0c\u4f7f\u5176\u56de\u5408\u5206 -20/-50/-80/-100/-150\u3002\u82e5\u76ee\u6807\u4e3a\u6700\u4f4e\u5206\uff0c\u4f60\u83b7\u5f97 50/100/150/200/300 \u4e0e\u8fde\u80dc\u5956\u52b1\uff1b\u82e5\u9884\u6d4b\u5931\u8d25\uff0c\u4f60\u7684\u603b\u5206\u989d\u5916 -50/-80/-80/-80/-80\u3002",
-    "going-long": "\u6bcf\u56de\u5408\u51fa\u724c\u524d\u505a\u591a\u4e00\u4f4d\u73a9\u5bb6\uff08\u53ef\u4ee5\u9009\u81ea\u5df1\uff09\uff0c\u4f7f\u5176\u56de\u5408\u5206 +20/+50/+50/+50/+100\u3002\u82e5\u76ee\u6807\u4e3a\u6700\u9ad8\u5206\uff0c\u4f60\u83b7\u5f97 50/100/150/200/300 \u4e0e\u8fde\u80dc\u5956\u52b1\u3002",
+    "going-long": "\u6bcf\u56de\u5408\u51fa\u724c\u524d\u505a\u591a\u4e00\u4f4d\u73a9\u5bb6\uff08\u53ef\u4ee5\u9009\u81ea\u5df1\uff09\uff0c\u4f7f\u5176\u56de\u5408\u5206 +20/+50/+50/+50/+100\u3002\u662f\u5426\u9884\u6d4b\u6210\u529f\u4f7f\u7528\u5f53\u524d\u56de\u5408\u3001\u5c1a\u672a\u52a0\u5165\u505a\u591a/\u505a\u7a7a\u76ee\u6807\u589e\u51cf\u7684\u56de\u5408\u5206\u5224\u5b9a\uff1b\u82e5\u76ee\u6807\u4e3a\u6700\u9ad8\u5206\uff0c\u4f60\u83b7\u5f97 50/100/150/200/300 \u4e0e\u8fde\u80dc\u5956\u52b1\u3002",
     "fate-collector": "\u5f00\u5c40\u5f03\u724c\u6b21\u6570\u6539\u4e3a 6\u3002\u4e94\u56de\u5408\u5185\u7b2c\u4e00\u6b21\u6253\u51fa\u4e00\u79cd\u81ea\u5df1\u6b64\u524d\u672a\u6253\u51fa\u7684\u724c\u578b\u65f6\uff0c\u6309\u7b2c 1/2/3/4/5 \u79cd\u5206\u522b\u83b7\u5f97 +20/+80/+150/+300/+400 \u56de\u5408\u5206\u3002",
     clod: "\u7b2c 1/2/3/4/5 \u56de\u5408\u624b\u724c\u6570\u6539\u4e3a 4/5/6/6/6\uff0c\u5f00\u5c40\u5f03\u724c\u6b21\u6570\u6539\u4e3a 6\uff0c\u4e0d\u518d\u6bcf\u56de\u5408\u989d\u5916\u589e\u52a0\u5f03\u724c\u3002"
   } : {
-    giant: "Start with 3,500 total score, 8 discard uses, and +1 multiplier on every hand. Choose no normal effects in rounds 2-5. After each round, lose the greater of 1.3x the lowest round score or 50% of the highest, down to zero. Once in rounds 1-4, use Defense Stance before playing to halve that round's score and ignore this burden. Only one Giant per game.",
-    dice: "Replace the base hand multiplier each round with your highest custom-die roll; effect multipliers are added afterward. Every three x3 rolls grant an extra roll. Odds: x3 20%, x4 22%, x5 21%, x6 14%, x7 8.5%, x8 6%, x10 3.5%, x12 2.5%, x15 1.5%, x20 1%.",
+    giant: "Start with 3,500 total score, 8 discard uses, and +1 multiplier on every hand. Choose no normal effects in rounds 2-5. Each round, the Giant loses max(1.3x lowest round score, 50% highest). AOE deducts 50% of the Giant's hand score from every player's total, and Smash deducts 100% of it from the highest-scoring non-Giant player. Once in rounds 1-5, Defense Stance makes only the Giant immune to deductions that round without lowering the round score. Only one Giant per game.",
+    dice: "Use max(natural hand multiplier, highest die roll) as the base multiplier; effect multipliers are added afterward. Every three x3 rolls grant an extra roll. Odds: x3 13%, x4 18%, x5 22%, x6 22%, x7 9.5%, x8 7%, x10 3.5%, x12 2.5%, x15 1.5%, x20 1%.",
     "big-short": "Short another player for -20/-50/-80/-100/-150 round score. A correct lowest-score prediction grants 50/100/150/200/300 plus streak rewards; a miss costs you 50/80/80/80/80 total score.",
-    "going-long": "Go long any player, including yourself, for +20/+50/+50/+50/+100 round score. A correct highest-score prediction grants 50/100/150/200/300 plus streak rewards.",
+    "going-long": "Go long any player, including yourself, for +20/+50/+50/+50/+100 round score. Prediction success uses the current round scores before Going Long/Big Short target adjustments; a correct highest-score prediction grants 50/100/150/200/300 plus streak rewards.",
     "fate-collector": "Start with 6 discard uses. The first time you play each new hand type, gain 20/80/150/300/400 round score for your 1st-5th collected type.",
     clod: "Your hand sizes become 4/5/6/6/6 in rounds 1-5 and you start with 6 discard uses. You no longer gain an extra discard each round."
   };
@@ -3676,7 +3705,7 @@ function scoreFateDescription(fate) {
     if (kind === "fate-collector") return "开局拥有 6 次弃牌。五回合内第一次打出一种自己此前未打出的牌型时，按第 1/2/3/4/5 种分别获得 +20/+80/+150/+300/+400 回合分。";
     if (kind === "clod") return "第 1/2/3/4/5 回合手牌上限改为 5/6/7/7/7，并且每回合额外获得 1 次弃牌机会。";
   } else {
-    if (kind === "giant") return "Start with 3,500 total score, 8 discards, and +1 hand multiplier. Lose max(1.3x lowest, 50% highest) after each round. Once in rounds 1-4, Defense Stance halves the round score and prevents this burden.";
+    if (kind === "giant") return "Start with 3,500 total score, 8 discards, and +1 hand multiplier. Each round applies the burden, AOE, and Smash. Once in rounds 1-5, Defense Stance prevents deductions without lowering the round score.";
     if (kind === "dice") return "Roll a custom die each round and replace the base hand multiplier with your highest roll; normal effect multipliers are added afterward. Start with one die, gain permanent dice from specified reroll/mirror effects, and earn an extra roll after every three x3 results. Odds: x3 18%, x4 21%, x5 21%, x6 15%, x7 9%, x8 7%, x10 4%, x12 2.5%, x15 1.5%, x20 1%.";
     if (kind === "big-short") return "Short another player before each play, reducing their round score by 20/50/80/100/150. If they finish lowest, gain 50/100/150/200/300 plus a 0/50/100/300/500 bonus for a 1-5 prediction streak.";
     if (kind === "going-long") return "Go long any player, including yourself, before each play, increasing their round score by 20/50/50/50/100. If they finish highest, gain 50/100/150/200/300 plus a 0/50/100/300/500 bonus for a 1-5 prediction streak.";
@@ -3739,12 +3768,31 @@ function battleEffectName(effect) {
   if (effect.kind === "going-long-target") return isZh() ? "做多目标" : "Long target";
   if (effect.kind === "giant-penalty") return isZh() ? "巨人负担" : "Giant burden";
   if (effect.kind === "big-short-miss") return isZh() ? "\u505a\u7a7a\u5931\u8d25" : "Big Short miss";
+  if (effect.kind === "giant-aoe") return isZh() ? "\u5de8\u4eba AOE" : "Giant AOE";
+  if (effect.kind === "giant-smash") return isZh() ? "\u5de8\u4eba\u731b\u51fb" : "Giant Smash";
   if (effect.kind === "fate-giant") return isZh() ? "\u5de8\u4eba\u500d\u7387" : "Giant multiplier";
   return effect.kind || "";
 }
 
 function battleEffectDescription(effect) {
   const suit = battleSuitName(effect.suit);
+  if (effect.kind === "tomato-king") {
+    const hits = Math.max(0, Number(effect.tomatoHits) || 0);
+    return isZh()
+      ? `\u672c\u56de\u5408\u500d\u7387 +1\uff1b\u6b64\u524d\u547d\u4e2d ${hits} \u6b21 x min(\u672c\u6b21\u724c\u578b\u57fa\u7840\u500d\u7387, 1) \u52a0\u5165\u6700\u7ec8\u5206\u3002`
+      : `This round gains +1 mult; add ${hits} earlier hits x min(base hand multiplier, 1) to final score.`;
+  }
+  if (effect.kind === "tomato-shooter") {
+    const throws = Math.max(0, Number(effect.tomatoThrows) || 0);
+    return isZh()
+      ? `\u672c\u56de\u5408\u500d\u7387 +1\uff1b\u6b64\u524d\u6295\u63b7 ${throws} \u6b21 x min(\u672c\u6b21\u724c\u578b\u57fa\u7840\u500d\u7387, 1) \u52a0\u5165\u6700\u7ec8\u5206\u3002`
+      : `This round gains +1 mult; add ${throws} earlier throws x min(base hand multiplier, 1) to final score.`;
+  }
+  if (effect.kind === "tempered-tomato") {
+    return isZh()
+      ? "\u8fbe\u6807\u540e\u6bcf\u56de\u5408\u5728\u624b\u724c\u7ed3\u7b97\u540e\u989d\u5916\u52a0\u5165\uff08\u547d\u4e2dx0.5 + \u6295\u63b7x0.2\uff09x min(\u672c\u6b21\u724c\u578b\u57fa\u7840\u500d\u7387, 1) \u6700\u7ec8\u5206\u3002"
+      : "Once active, after hand scoring add (hits x0.5 + throws x0.2) x min(base hand multiplier, 1) final score each round.";
+  }
   const balanceDescription = battleBalanceEffectDescription(effect);
   if (balanceDescription) return balanceDescription;
   if (effect.kind === "suit-chip") return isZh() ? `\u6253\u51fa\u7684${suit}\u6bcf\u5f20 +${effect.amount} \u70b9` : `Played ${suit} cards gain +${effect.amount} chips.`;
@@ -3869,19 +3917,19 @@ function battleBalanceEffectDescription(effect) {
   if (effect.kind === "tomato-king") {
     const hits = Math.max(0, Number(effect.tomatoHits) || 0);
     return isZh()
-      ? `\u672c\u56de\u5408\u500d\u7387 +1\uff1b\u624b\u724c\u7ed3\u7b97\u540e\uff0c\u6b64\u524d\u88ab\u547d\u4e2d ${hits} \u6b21 \u00d7 min(\u672c\u6b21\u724c\u578b\u57fa\u7840\u500d\u7387, 2) \u52a0\u5165\u6700\u7ec8\u5206\u3002\u6bcf\u5c40\u4e00\u6b21\u3002`
-      : `This round gains +1 mult; after hand scoring, add ${hits} earlier hits x min(base hand multiplier, 2) to final score. Once per game.`;
+      ? `\u672c\u56de\u5408\u500d\u7387 +1\uff1b\u624b\u724c\u7ed3\u7b97\u540e\uff0c\u6b64\u524d\u88ab\u547d\u4e2d ${hits} \u6b21 \u00d7 min(\u672c\u6b21\u724c\u578b\u57fa\u7840\u500d\u7387, 1) \u52a0\u5165\u6700\u7ec8\u5206\u3002\u6bcf\u5c40\u4e00\u6b21\u3002`
+      : `This round gains +1 mult; after hand scoring, add ${hits} earlier hits x min(base hand multiplier, 1) to final score. Once per game.`;
   }
   if (effect.kind === "tomato-shooter") {
     const throws = Math.max(0, Number(effect.tomatoThrows) || 0);
     return isZh()
-      ? `\u672c\u56de\u5408\u500d\u7387 +1\uff1b\u624b\u724c\u7ed3\u7b97\u540e\uff0c\u6b64\u524d\u6295\u63b7 ${throws} \u6b21 \u00d7 min(\u672c\u6b21\u724c\u578b\u57fa\u7840\u500d\u7387, 2) \u52a0\u5165\u6700\u7ec8\u5206\u3002\u6bcf\u5c40\u4e00\u6b21\u3002`
-      : `This round gains +1 mult; after hand scoring, add ${throws} earlier throws x min(base hand multiplier, 2) to final score. Once per game.`;
+      ? `\u672c\u56de\u5408\u500d\u7387 +1\uff1b\u624b\u724c\u7ed3\u7b97\u540e\uff0c\u6b64\u524d\u6295\u63b7 ${throws} \u6b21 \u00d7 min(\u672c\u6b21\u724c\u578b\u57fa\u7840\u500d\u7387, 1) \u52a0\u5165\u6700\u7ec8\u5206\u3002\u6bcf\u5c40\u4e00\u6b21\u3002`
+      : `This round gains +1 mult; after hand scoring, add ${throws} earlier throws x min(base hand multiplier, 1) to final score. Once per game.`;
   }
   if (effect.kind === "tempered-tomato") {
     return isZh()
-      ? "\u6301\u7eed\u5224\u5b9a\u756a\u8304\u9608\u503c\uff1b\u8fbe\u6807\u540e\u6bcf\u56de\u5408\u5728\u624b\u724c\u7ed3\u7b97\u540e\u989d\u5916\u52a0\u5165\uff08\u547d\u4e2d\u00d70.5 + \u6295\u63b7\u00d70.2\uff09\u00d7 min(\u672c\u6b21\u724c\u578b\u57fa\u7840\u500d\u7387, 2) \u6700\u7ec8\u5206\u3002\u6bcf\u5c40\u4e00\u6b21\u3002"
-      : "Continuously checks tomato thresholds; once active, after hand scoring add (hits x0.5 + throws x0.2) x min(base hand multiplier, 2) final score each round. Once per game.";
+      ? "\u6301\u7eed\u5224\u5b9a\u756a\u8304\u9608\u503c\uff1b\u8fbe\u6807\u540e\u6bcf\u56de\u5408\u5728\u624b\u724c\u7ed3\u7b97\u540e\u989d\u5916\u52a0\u5165\uff08\u547d\u4e2d\u00d70.5 + \u6295\u63b7\u00d70.2\uff09\u00d7 min(\u672c\u6b21\u724c\u578b\u57fa\u7840\u500d\u7387, 1) \u6700\u7ec8\u5206\u3002\u6bcf\u5c40\u4e00\u6b21\u3002"
+      : "Continuously checks tomato thresholds; once active, after hand scoring add (hits x0.5 + throws x0.2) x min(base hand multiplier, 1) final score each round. Once per game.";
   }
   if (effect.kind === "dance-illusions") {
     return isZh()

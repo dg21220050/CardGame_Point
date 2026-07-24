@@ -33,12 +33,12 @@ const HANDS = [
 
 const HAND_BY_ID = new Map(HANDS.map((hand) => [hand.id, hand]));
 const FATE_DICE_OUTCOMES = [
-  { value: 3, probability: 0.2 },
-  { value: 4, probability: 0.22 },
-  { value: 5, probability: 0.21 },
-  { value: 6, probability: 0.14 },
-  { value: 7, probability: 0.085 },
-  { value: 8, probability: 0.06 },
+  { value: 3, probability: 0.13 },
+  { value: 4, probability: 0.18 },
+  { value: 5, probability: 0.22 },
+  { value: 6, probability: 0.22 },
+  { value: 7, probability: 0.095 },
+  { value: 8, probability: 0.07 },
   { value: 10, probability: 0.035 },
   { value: 12, probability: 0.025 },
   { value: 15, probability: 0.015 },
@@ -137,8 +137,12 @@ function giantFatePenalty(roundScores) {
   return Math.max(0, Math.round(Math.max(lowest * 1.3, highest * 0.5)));
 }
 
-function giantDefenseScore(roundScore) {
-  return Math.floor(Math.max(0, Number(roundScore) || 0) * 0.5);
+function giantAoePenalty(giantHandScore) {
+  return Math.floor(Math.max(0, Number(giantHandScore) || 0) * 0.5);
+}
+
+function giantSmashPenalty(giantHandScore) {
+  return Math.floor(Math.max(0, Number(giantHandScore) || 0));
 }
 
 function giantKillerActiveInRound(untilRound, round) {
@@ -150,6 +154,17 @@ function giantKillerActiveInRound(untilRound, round) {
 function fateTargetAdjustment(fateKind, round) {
   const values = FATE_TARGET_ADJUSTMENTS[fateKind] || [];
   return Math.max(0, Number(values[Math.max(0, Number(round) || 0)]) || 0);
+}
+
+function fatePredictionCorrect(fateKind, targetScore, roundScores) {
+  const target = Number(targetScore);
+  const scores = (Array.isArray(roundScores) ? roundScores : [])
+    .map((score) => Number(score))
+    .filter(Number.isFinite);
+  if (!Number.isFinite(target) || !scores.length) return false;
+  if (fateKind === "going-long") return target === Math.max(...scores);
+  if (fateKind === "big-short") return target === Math.min(...scores);
+  return false;
 }
 
 function fateCollectorBonus(collectionNumber) {
@@ -262,9 +277,9 @@ function scorePlay(cards, effect, context = {}) {
   const naturalBaseMultiplier = hand.multiplier;
   const requestedBaseMultiplier = Number(context.baseMultiplierOverride);
   const baseMultiplier = Number.isFinite(requestedBaseMultiplier) && requestedBaseMultiplier > 0
-    ? requestedBaseMultiplier
+    ? Math.max(naturalBaseMultiplier, requestedBaseMultiplier)
     : naturalBaseMultiplier;
-  const tomatoFinalScoreMultiplier = Math.min(hand.multiplier, 2);
+  const tomatoFinalScoreMultiplier = Math.min(hand.multiplier, 1);
   const scoringIndexes = new Set(hand.scoringIndexes || cards.map((_, index) => index));
   let chips = 0;
   let additiveMultiplier = 0;
@@ -732,11 +747,13 @@ module.exports = {
   effectAllowedInRound,
   fateCollectorBonus,
   fateDiceValueForRoll,
+  fatePredictionCorrect,
   fateTargetAdjustment,
-  giantDefenseScore,
+  giantAoePenalty,
   giantFatePenalty,
   giantKillerActiveInRound,
   giantKillerScoreFactor,
+  giantSmashPenalty,
   criticalProfileForEffects,
   displayCode,
   findBestPlay,
