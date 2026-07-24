@@ -5,10 +5,14 @@ const {
   createEffectOptions,
   criticalProfileForEffects,
   effectAllowedInRound,
+  fateCollectorBonus,
   fateDiceValueForRoll,
+  fateTargetAdjustment,
   findBestPlay,
   giantDefenseScore,
   giantFatePenalty,
+  giantKillerActiveInRound,
+  giantKillerScoreFactor,
   royalFlushWins,
   scorePlay,
   tomatoCountRouting,
@@ -156,19 +160,38 @@ test("a 10-J-Q-K-A straight flush is marked as an instant-win Royal Flush", () =
   assert.equal(scorePlay(cards(["9S", "TS", "JS", "QS", "KS"])).isRoyalFlush, false);
 });
 
-test("only the two selected Royal Flush suits win instantly", () => {
-  const winningSuits = ["H", "C"];
+test("only the single selected Royal Flush suit wins instantly", () => {
+  const winningSuits = ["H"];
   assert.equal(royalFlushWins(cards(["TH", "JH", "QH", "KH", "AH"]), winningSuits), true);
-  assert.equal(royalFlushWins(cards(["TC", "JC", "QC", "KC", "AC"]), winningSuits), true);
+  assert.equal(royalFlushWins(cards(["TC", "JC", "QC", "KC", "AC"]), winningSuits), false);
   assert.equal(royalFlushWins(cards(["TS", "JS", "QS", "KS", "AS"]), winningSuits), false);
   assert.equal(royalFlushWins(cards(["TD", "JD", "QD", "KD", "AD"]), winningSuits), false);
 });
 
 test("The Giant burden and Defense Stance use the new balance values", () => {
-  assert.equal(giantFatePenalty([100, 400]), 220);
+  assert.equal(giantFatePenalty([100, 400]), 200);
   assert.equal(giantFatePenalty([300, 400]), 390);
   assert.equal(giantDefenseScore(401), 200);
   assert.equal(giantDefenseScore(0), 0);
+});
+
+test("FATE target and collection rewards use their separate balance values", () => {
+  assert.equal(fateTargetAdjustment("big-short", 3), 80);
+  assert.equal(fateTargetAdjustment("going-long", 3), 50);
+  assert.equal(fateTargetAdjustment("going-long", 5), 100);
+  assert.equal(fateCollectorBonus(4), 300);
+  assert.equal(fateCollectorBonus(5), 400);
+});
+
+test("Giant Killer uses the reduced gap multipliers", () => {
+  assert.equal(giantKillerScoreFactor({ highestTotalScoreBeforeRound: 1000, totalScoreBeforeRound: 950 }), 1.3);
+  assert.equal(giantKillerScoreFactor({ highestTotalScoreBeforeRound: 1000, totalScoreBeforeRound: 850 }), 1.45);
+  assert.equal(giantKillerScoreFactor({ highestTotalScoreBeforeRound: 1000, totalScoreBeforeRound: 750 }), 1.6);
+  assert.equal(giantKillerScoreFactor({ highestTotalScoreBeforeRound: 1000, totalScoreBeforeRound: 650 }), 1.75);
+  assert.equal(giantKillerScoreFactor({ highestTotalScoreBeforeRound: 1000, totalScoreBeforeRound: 500 }), 1.9);
+  assert.equal(giantKillerActiveInRound(3, 2), true);
+  assert.equal(giantKillerActiveInRound(3, 3), true);
+  assert.equal(giantKillerActiveInRound(3, 4), false);
 });
 
 test("Dance of Illusions routes tomato counts to throws instead of self-hits", () => {

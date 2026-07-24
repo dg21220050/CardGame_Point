@@ -88,10 +88,8 @@ const SCORE_BATTLE_DICE_EFFECTS = new Set([
   "shadow-targeting",
   "chaos-dice"
 ]);
-const SCORE_BATTLE_FATE_TARGET_ADJUSTMENTS = [0, 20, 50, 80, 100, 150];
 const SCORE_BATTLE_FATE_PREDICTION_BONUSES = [0, 50, 100, 150, 200, 300];
 const SCORE_BATTLE_FATE_STREAK_BONUSES = [0, 0, 50, 100, 300, 500];
-const SCORE_BATTLE_FATE_COLLECTOR_BONUSES = [0, 20, 80, 150, 250, 350];
 const SCORE_BATTLE_BIG_SHORT_MISS_PENALTIES = [0, 50, 80, 80, 80, 80];
 const SCORE_BATTLE_CLOD_HAND_SIZES = [0, 4, 5, 6, 6, 6];
 
@@ -2186,7 +2184,7 @@ function startScoreBattle(table) {
   table.scoreTomatoHits = [];
   table.historyRecorded = false;
   table.giantFateSeatId = null;
-  table.royalVictorySuits = scoreBattle.shuffle(scoreBattle.SUITS).slice(0, 2);
+  table.royalVictorySuits = scoreBattle.shuffle(scoreBattle.SUITS).slice(0, 1);
   table.standings = [];
   table.results = [];
   for (const seat of table.seats) {
@@ -2229,6 +2227,15 @@ function startScoreBattle(table) {
   return { ok: true };
 }
 
+function expireScoreRoundPersistentEffects(seat, round) {
+  const persistent = seat?.persistentEffects;
+  if (!persistent?.giantKiller) return;
+  const untilRound = Math.max(0, Number(persistent.giantKillerUntilRound) || 0);
+  if (!untilRound || scoreBattle.giantKillerActiveInRound(untilRound, round)) return;
+  delete persistent.giantKiller;
+  delete persistent.giantKillerUntilRound;
+}
+
 function beginScoreBattleRound(table) {
   if (table.round > 1) {
     table.previousRoundLeaderSeatIds = table.currentRoundLeaderSeatIds || [];
@@ -2241,6 +2248,7 @@ function beginScoreBattleRound(table) {
     table.roundStartTotals[seat.seatId] = Number(seat.totalScore) || 0;
   }
   for (const seat of activeScoreSeats(table)) {
+    expireScoreRoundPersistentEffects(seat, table.round);
     topUpScoreHand(table, seat, scoreHandSizeForSeat(table, seat));
     seat.selectedEffect = null;
     seat.effectChosen = false;
@@ -2476,6 +2484,8 @@ function chooseScoreFateForSeat(table, seat, fateId) {
     resetScoreFateDiceRound(seat);
   } else if (fate.kind === "clod") {
     topUpScoreHand(table, seat, SCORE_BATTLE_CLOD_HAND_SIZES[1]);
+    seat.discardUsesLeft = 6;
+  } else if (fate.kind === "fate-collector") {
     seat.discardUsesLeft = 6;
   }
   table.messages.unshift(`${seat.displayName} chose FATE: ${fate.name}.`);
@@ -2903,6 +2913,7 @@ function applyScoreEffect(table, seat, effect, payload) {
   }
   if (effect.kind === "giant-killer") {
     seat.persistentEffects.giantKiller = true;
+    seat.persistentEffects.giantKillerUntilRound = Math.min(SCORE_BATTLE_ROUNDS, table.round + 1);
     return { ok: true, effect };
   }
   if (effect.kind === "matthew-effect") {
@@ -3130,7 +3141,7 @@ function applyScoreFateCollectorBonus(seat, result) {
   seat.fateCollectedHandIds.push(result.handId);
   const collectionNumber = seat.fateCollectedHandIds.length;
   if (collectionNumber > 5) return;
-  const bonus = SCORE_BATTLE_FATE_COLLECTOR_BONUSES[collectionNumber] || 0;
+  const bonus = scoreBattle.fateCollectorBonus(collectionNumber);
   result.score = Math.min(1000000, Math.max(0, Math.floor((Number(result.score) || 0) + bonus)));
   result.scoreBonuses = result.scoreBonuses || [];
   result.scoreBonuses.push({ kind: "fate-collector", amount: bonus });
@@ -3257,10 +3268,10 @@ function applyScorePostRoundBonuses(table) {
 function applyScoreFatePredictionBonuses(table) {
   const active = activeScoreSeats(table);
   const predictors = active.filter(scoreFateNeedsTarget);
-  const adjustment = SCORE_BATTLE_FATE_TARGET_ADJUSTMENTS[table.round] || 0;
   for (const seat of predictors) {
     const target = active.find((entry) => entry.seatId === seat.fateTargetSeatId);
     if (!target) continue;
+    const adjustment = scoreBattle.fateTargetAdjustment(seat.fate.kind, table.round);
     const direction = seat.fate.kind === "going-long" ? 1 : -1;
     adjustScoreRoundScore(table, target, direction * adjustment, `${seat.fate.kind}-target`, seat.displayName);
   }
@@ -3892,7 +3903,7 @@ function scoreTableView(table, user) {
     currentTurnName: table.currentTurnSeatId ? table.seats.find((seat) => seat.seatId === table.currentTurnSeatId)?.displayName || "" : "",
     currentRoundLeaderSeatIds: table.currentRoundLeaderSeatIds || [],
     previousRoundLeaderSeatIds: table.previousRoundLeaderSeatIds || [],
-    royalVictorySuits: Array.isArray(table.royalVictorySuits) ? table.royalVictorySuits.slice(0, 2) : [],
+    royalVictorySuits: Array.isArray(table.royalVictorySuits) ? table.royalVictorySuits.slice(0, 1) : [],
     roundEffects: (table.roundEffects || []).map((effect) => ({
       kind: effect.kind,
       suit: effect.suit,

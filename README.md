@@ -46,6 +46,8 @@ The stop script only shuts down the CardGame Point server started from this fold
 - A game has five rounds. Each round deals five new community cards and tops each player up to 3, 4, 5, 5, then 5 hand cards.
 - During each player's first-round turn, FATE presents two random build choices and requires one selection before play. The chosen FATE remains visible at that player's seat for the full game.
 - The six FATE builds are The Giant, The Dice, The Big Short, Going Long, The Collector, and The Clod. Only one player can choose The Giant in a game.
+- The Giant loses the greater of 1.3 times the lowest round score or 50% of the highest after each round. Its once-per-game Defense Stance halves one round's score and prevents that burden.
+- Going Long adds 20, 50, 50, 50, then 100 to its target across rounds 1-5. The Collector starts with six discards and awards 20, 80, 150, 300, then 400 for its first five unique hand types.
 - The Dice replaces the base hand multiplier with the player's highest roll that round; additive effect multipliers still apply afterward. Specified reroll and mirror effects permanently add dice.
 - The Clod changes its owner's round hand sizes to 5, 6, 7, 7, and 7 and grants one extra discard use each round.
 - Players choose exactly five cards from their own hand and the current community cards. Each play must include at least one community card.
@@ -57,7 +59,8 @@ The stop script only shuts down the CardGame Point server started from this fold
 - Interactive effects may change hands or the community board immediately, so later players in the same round see and score against the changed state.
 - Score Battle effects use the current balance rules shown in the in-game scoring rules panel.
 - Scores use the selected cards' point total (Ace is 15), hand multiplier, and effect modifiers. The five round scores are added together.
-- Two Royal Flush suits are selected randomly at the start of each game and shown beside the round counter. A 10, J, Q, K, A Royal Flush in either selected suit wins immediately; the other suits score as normal Straight Flushes.
+- One Royal Flush suit is selected randomly at the start of each game and shown beside the round counter. A 10, J, Q, K, A Royal Flush in that suit wins immediately; the other suits score as normal Straight Flushes.
+- Giant Killer lasts for its selection round and the following round, using x1.3/x1.45/x1.6/x1.75/x1.9 by score gap, then expires and cannot appear again for that player in the same game.
 - Tomato King, Tomato Shooter, and Tempered Tomato multiply their count bonus by the lower of the played hand's base multiplier and 2.
 - Score Battle tomatoes can be thrown only during another player's active turn, not during your own turn or round settlement.
 - Submitted plays are revealed to all players with community cards highlighted and a scoring breakdown shown to the scoring player.

@@ -44,6 +44,12 @@ const FATE_DICE_OUTCOMES = [
   { value: 15, probability: 0.015 },
   { value: 20, probability: 0.01 }
 ];
+const FATE_TARGET_ADJUSTMENTS = {
+  "big-short": [0, 20, 50, 80, 100, 150],
+  "going-long": [0, 20, 50, 50, 50, 100]
+};
+const FATE_COLLECTOR_BONUSES = [0, 20, 80, 150, 300, 400];
+
 function createDeck() {
   const deck = [];
   for (const suit of SUITS) {
@@ -128,11 +134,26 @@ function giantFatePenalty(roundScores) {
   if (!scores.length) return 0;
   const lowest = Math.min(...scores);
   const highest = Math.max(...scores);
-  return Math.max(0, Math.round(Math.max(lowest * 1.3, highest * 0.55)));
+  return Math.max(0, Math.round(Math.max(lowest * 1.3, highest * 0.5)));
 }
 
 function giantDefenseScore(roundScore) {
   return Math.floor(Math.max(0, Number(roundScore) || 0) * 0.5);
+}
+
+function giantKillerActiveInRound(untilRound, round) {
+  const limit = Math.max(0, Number(untilRound) || 0);
+  const current = Math.max(0, Number(round) || 0);
+  return limit > 0 && current > 0 && current <= limit;
+}
+
+function fateTargetAdjustment(fateKind, round) {
+  const values = FATE_TARGET_ADJUSTMENTS[fateKind] || [];
+  return Math.max(0, Number(values[Math.max(0, Number(round) || 0)]) || 0);
+}
+
+function fateCollectorBonus(collectionNumber) {
+  return Math.max(0, Number(FATE_COLLECTOR_BONUSES[Math.max(0, Number(collectionNumber) || 0)]) || 0);
 }
 
 function scoringIndexesForHand(cards, handId, rankCounts) {
@@ -651,10 +672,10 @@ function giantKillerScoreFactor(context = {}) {
   const gap = leaderTotal - seatTotal;
   if (gap <= 0) return 1;
   if (gap <= 100) return 1.3;
-  if (gap <= 200) return 1.5;
-  if (gap <= 300) return 1.7;
-  if (gap <= 400) return 2;
-  return 2.5;
+  if (gap <= 200) return 1.45;
+  if (gap <= 300) return 1.6;
+  if (gap <= 400) return 1.75;
+  return 1.9;
 }
 
 function findBestPlay(handCards, communityCards, effect, options = {}) {
@@ -709,9 +730,13 @@ module.exports = {
   createDeck,
   createEffectOptions,
   effectAllowedInRound,
+  fateCollectorBonus,
   fateDiceValueForRoll,
+  fateTargetAdjustment,
   giantDefenseScore,
   giantFatePenalty,
+  giantKillerActiveInRound,
+  giantKillerScoreFactor,
   criticalProfileForEffects,
   displayCode,
   findBestPlay,

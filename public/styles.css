@@ -1511,6 +1511,23 @@ input:focus {
   background: #9adce3;
 }
 
+.score-fate-line.has-defense-action {
+  flex-wrap: nowrap;
+}
+
+.giant-defense-inline-button {
+  flex: 0 0 auto;
+  min-height: 1.8rem;
+  margin-left: auto;
+  padding: 0.28rem 0.48rem;
+  font-size: 0.68rem;
+  line-height: 1.1;
+}
+
+.effect-target-confirm-row button {
+  width: 100%;
+}
+
 .fate-target-controls {
   display: grid;
 }
