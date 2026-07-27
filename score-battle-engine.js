@@ -142,22 +142,20 @@ function giantAoePenalty(giantHandScore) {
 }
 
 function giantSmashPenalty(giantHandScore) {
-  return Math.floor(Math.max(0, Number(giantHandScore) || 0) * 0.5);
+  return Math.floor(Math.max(0, Number(giantHandScore) || 0) * 0.2);
 }
 
 function giantSettlementPlan(seats, giantSeatId, giantHandScore) {
   const opponents = (Array.isArray(seats) ? seats : [])
     .filter((seat) => seat?.seatId && seat.seatId !== giantSeatId);
-  const highestOpponentScore = opponents.length
-    ? Math.max(...opponents.map((seat) => Number(seat.roundScore) || 0))
-    : 0;
+  const bareHandScore = Math.max(0, Number(giantHandScore) || 0);
   return {
     burdenPenalty: giantFatePenalty(opponents.map((seat) => seat.roundScore)),
-    aoePenalty: giantAoePenalty(giantHandScore),
+    aoePenalty: giantAoePenalty(bareHandScore),
     aoeTargetSeatIds: opponents.map((seat) => seat.seatId),
-    smashPenalty: giantSmashPenalty(giantHandScore),
+    smashPenalty: giantSmashPenalty(bareHandScore),
     smashTargetSeatIds: opponents
-      .filter((seat) => (Number(seat.roundScore) || 0) === highestOpponentScore)
+      .filter((seat) => (Number(seat.roundScore) || 0) < bareHandScore)
       .map((seat) => seat.seatId)
   };
 }
