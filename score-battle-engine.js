@@ -33,13 +33,13 @@ const HANDS = [
 
 const HAND_BY_ID = new Map(HANDS.map((hand) => [hand.id, hand]));
 const FATE_DICE_OUTCOMES = [
-  { value: 3, probability: 0.13 },
+  { value: 3, probability: 0.08 },
   { value: 4, probability: 0.18 },
   { value: 5, probability: 0.22 },
-  { value: 6, probability: 0.22 },
+  { value: 6, probability: 0.25 },
   { value: 7, probability: 0.095 },
   { value: 8, probability: 0.07 },
-  { value: 10, probability: 0.035 },
+  { value: 10, probability: 0.055 },
   { value: 12, probability: 0.025 },
   { value: 15, probability: 0.015 },
   { value: 20, probability: 0.01 }
@@ -138,11 +138,11 @@ function giantFatePenalty(roundScores) {
 }
 
 function giantAoePenalty(giantHandScore) {
-  return Math.floor(Math.max(0, Number(giantHandScore) || 0) * 0.5);
+  return Math.floor(Math.max(0, Number(giantHandScore) || 0) * 0.2);
 }
 
 function giantSmashPenalty(giantHandScore) {
-  return Math.floor(Math.max(0, Number(giantHandScore) || 0));
+  return Math.floor(Math.max(0, Number(giantHandScore) || 0) * 0.5);
 }
 
 function giantSettlementPlan(seats, giantSeatId, giantHandScore) {
