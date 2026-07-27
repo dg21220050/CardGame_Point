@@ -79,6 +79,7 @@ const SCORE_BATTLE_FATES = [
   { kind: "fate-collector", name: "The Collector" },
   { kind: "clod", name: "The Clod" }
 ];
+const SCORE_BATTLE_GIANT_STARTING_SCORE = 3300;
 const SCORE_BATTLE_DICE_EFFECTS = new Set([
   "void-erosion",
   "refresher-orb",
@@ -2481,7 +2482,7 @@ function chooseScoreFateForSeat(table, seat, fateId) {
   seat.fateOptions = [];
   if (fate.kind === "giant") {
     table.giantFateSeatId = seat.seatId;
-    seat.totalScore += 3500;
+    seat.totalScore += SCORE_BATTLE_GIANT_STARTING_SCORE;
     seat.discardUsesLeft = 8;
   } else if (fate.kind === "dice") {
     seat.fateDiceCount = 1;
