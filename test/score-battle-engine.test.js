@@ -177,21 +177,22 @@ test("The Giant burden, AOE, and Smash use the new balance values", () => {
   assert.equal(giantFatePenalty([300, 400]), 390);
   assert.equal(giantAoePenalty(401), 80);
   assert.equal(giantAoePenalty(0), 0);
-  assert.equal(giantSmashPenalty(401), 200);
+  assert.equal(giantSmashPenalty(401), 80);
 });
 
-test("The Giant's AOE and Smash only target non-Giant players", () => {
+test("The Giant's Smash targets every non-Giant below its bare hand score", () => {
   const plan = giantSettlementPlan([
     { seatId: "giant", roundScore: 900 },
-    { seatId: "first-opponent", roundScore: 300 },
-    { seatId: "top-opponent", roundScore: 500 }
+    { seatId: "below-giant", roundScore: 300 },
+    { seatId: "equal-giant", roundScore: 401 },
+    { seatId: "above-giant", roundScore: 500 }
   ], "giant", 401);
 
   assert.equal(plan.burdenPenalty, 390);
   assert.equal(plan.aoePenalty, 80);
-  assert.deepEqual(plan.aoeTargetSeatIds, ["first-opponent", "top-opponent"]);
-  assert.equal(plan.smashPenalty, 200);
-  assert.deepEqual(plan.smashTargetSeatIds, ["top-opponent"]);
+  assert.deepEqual(plan.aoeTargetSeatIds, ["below-giant", "equal-giant", "above-giant"]);
+  assert.equal(plan.smashPenalty, 80);
+  assert.deepEqual(plan.smashTargetSeatIds, ["below-giant"]);
 });
 
 test("FATE target and collection rewards use their separate balance values", () => {
