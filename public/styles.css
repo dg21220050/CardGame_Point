@@ -1657,6 +1657,112 @@ input:focus {
   line-height: 1.25;
 }
 
+.round-effect-pill[tabindex="0"] {
+  cursor: help;
+}
+
+.round-effect-pill[tabindex="0"]:focus-visible {
+  outline: 2px solid #fff5c9;
+  outline-offset: 2px;
+}
+
+.royal-victory-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 70;
+  overflow: hidden;
+  border-radius: inherit;
+  background: rgba(5, 10, 9, 0.94);
+  pointer-events: none;
+  animation: royalVictoryBackdrop 240ms ease both;
+}
+
+.royal-victory-cards {
+  position: absolute;
+  inset: 0 0 15%;
+}
+
+.royal-victory-card-slot {
+  position: absolute;
+  left: var(--royal-x);
+  top: var(--royal-y);
+  width: 5.4rem;
+  aspect-ratio: 5 / 7;
+  transform: translate(-50%, -50%);
+  perspective: 700px;
+}
+
+.royal-victory-card-flipper {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+  animation: royalVictoryCardFlip 580ms cubic-bezier(0.2, 0.8, 0.2, 1) var(--royal-flip-delay) both;
+}
+
+.royal-victory-card-face {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 7px;
+  object-fit: contain;
+  backface-visibility: hidden;
+  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.42);
+}
+
+.royal-victory-card-face.is-front {
+  transform: rotateY(180deg);
+}
+
+.royal-victory-message {
+  position: absolute;
+  left: 50%;
+  top: 48%;
+  z-index: 2;
+  display: grid;
+  gap: 0.35rem;
+  width: min(34rem, 78%);
+  transform: translate(-50%, -50%);
+  color: #fff8dc;
+  text-align: center;
+  text-shadow: 0 3px 14px rgba(0, 0, 0, 0.9);
+  opacity: 0;
+  animation: royalVictoryMessage 700ms ease var(--royal-text-delay) both;
+}
+
+.royal-victory-message strong {
+  color: #f1c64b;
+  font-size: 2rem;
+  line-height: 1.05;
+}
+
+.royal-victory-message span {
+  font-size: 1.35rem;
+  font-weight: 900;
+}
+
+@keyframes royalVictoryBackdrop {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes royalVictoryCardFlip {
+  from { transform: rotateY(0deg) scale(0.94); }
+  to { transform: rotateY(180deg) scale(1); }
+}
+
+@keyframes royalVictoryMessage {
+  from {
+    opacity: 0;
+    transform: translate(-50%, calc(-50% + 0.8rem));
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%);
+  }
+}
+
 .battle-result {
   position: relative;
   display: grid;
@@ -2955,5 +3061,31 @@ button.battle-card:hover {
   .score-seat-grid.seats-3 .score-seat-2 {
     left: auto;
     right: 1%;
+  }
+}
+
+@media (max-width: 760px) {
+  .royal-victory-card-slot {
+    width: 4rem;
+  }
+
+  .royal-victory-message {
+    width: 82%;
+  }
+
+  .royal-victory-message strong {
+    font-size: 1.45rem;
+  }
+
+  .royal-victory-message span {
+    font-size: 1rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .royal-victory-overlay,
+  .royal-victory-card-flipper,
+  .royal-victory-message {
+    animation-duration: 1ms;
   }
 }
