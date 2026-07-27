@@ -401,6 +401,9 @@ const state = {
   victoryEffectUntil: 0,
   victoryEffectSrc: "",
   victoryEffectTimer: null,
+  seenRoyalVictoryKey: "",
+  royalVictoryAnimation: null,
+  royalVictoryTimer: null,
   showUpdateNotice: false,
   showUpdateHistory: false,
   updateHistoryScroll: 0,
@@ -955,6 +958,7 @@ function setCurrentScoreTable(table) {
   }
   queueBattleScoreOverlays(table);
   queueTomatoEvents(table, "score");
+  handleRoyalVictoryAnimation(table);
   handleScoreVictoryEffect(table);
   handleScoreLossDialog(table);
   requestBattleScorePreview();
@@ -980,6 +984,7 @@ function clearCurrentScoreTable() {
   state.scoreLossDialog = null;
   state.victoryEffectUntil = 0;
   state.victoryEffectSrc = "";
+  state.royalVictoryAnimation = null;
   if (state.battleCommunityTimer) {
     clearTimeout(state.battleCommunityTimer);
     state.battleCommunityTimer = null;
@@ -991,6 +996,10 @@ function clearCurrentScoreTable() {
   if (state.victoryEffectTimer) {
     clearTimeout(state.victoryEffectTimer);
     state.victoryEffectTimer = null;
+  }
+  if (state.royalVictoryTimer) {
+    clearTimeout(state.royalVictoryTimer);
+    state.royalVictoryTimer = null;
   }
   renderBattleScoreOverlayHost();
 }
@@ -1034,6 +1043,7 @@ function queueBattleScoreOverlays(table) {
 
 function handleScoreVictoryEffect(table) {
   if (!table || !table.victoryGameNumber || !Array.isArray(table.winnerSeatIds)) return;
+  if (Number(table.royalVictory?.gameNumber) === Number(table.victoryGameNumber)) return;
   if (!table.youSeatId || !table.winnerSeatIds.includes(table.youSeatId)) return;
   const key = `score:${table.id}:${table.victoryGameNumber}:${table.winnerSeatIds.join(",")}`;
   if (state.seenVictoryKey === key) return;
@@ -1047,6 +1057,33 @@ function handleScoreVictoryEffect(table) {
     state.victoryEffectTimer = null;
     render();
   }, 2700);
+}
+
+function handleRoyalVictoryAnimation(table) {
+  const victory = table?.royalVictory;
+  if (!victory?.gameNumber || !victory.winnerSeatId || !Array.isArray(victory.cards) || victory.cards.length !== 5) return;
+  const key = `royal:${table.id}:${victory.gameNumber}:${victory.winnerSeatId}`;
+  if (state.seenRoyalVictoryKey === key) return;
+  state.seenRoyalVictoryKey = key;
+  if (state.royalVictoryTimer) clearTimeout(state.royalVictoryTimer);
+  if (state.battleScoreOverlayTimer) clearTimeout(state.battleScoreOverlayTimer);
+  state.battleScoreOverlayTimer = null;
+  state.battleScoreQueue = [];
+  state.battleScoreOverlay = null;
+  state.royalVictoryAnimation = {
+    key,
+    tableId: table.id,
+    winnerName: victory.winnerName || victory.winnerSeatId,
+    cards: victory.cards.map((card) => ({ ...card })),
+    startedAt: Date.now(),
+    duration: 6200
+  };
+  renderBattleScoreOverlayHost();
+  state.royalVictoryTimer = window.setTimeout(() => {
+    if (state.royalVictoryAnimation?.key === key) state.royalVictoryAnimation = null;
+    state.royalVictoryTimer = null;
+    render();
+  }, 6250);
 }
 
 function showNextBattleScoreOverlay() {
@@ -1598,17 +1635,7 @@ function buildBattleScoreOverlay() {
       el("span", {}, [`${t("Base chips")} ${value.baseChips ?? 0}${bonusText} = ${value.finalChips ?? 0}${scoringText}`])
     ]);
   });
-  const multiplierBonus = Number(result.bonusMultiplier || 0);
-  const additiveTotal = result.additiveMultiplierTotal ?? (Number(result.baseMultiplier || 0) + multiplierBonus);
-  const factorText = (result.multiplierFactors || []).length
-    ? ` x ${(result.multiplierFactors || []).map((entry) => entry.factor).join(" x ")} = ${result.multiplier}`
-    : (additiveTotal !== result.multiplier ? ` = ${result.multiplier}` : "");
-  const additiveText = `${result.baseMultiplier}${multiplierBonus ? ` + ${multiplierBonus}` : ""}`;
-  const multiplierText = factorText
-    ? `${(result.multiplierFactors || []).length ? `(${additiveText})` : additiveText}${factorText}`
-    : multiplierBonus
-      ? `${additiveText} = ${result.multiplier}`
-    : `${result.multiplier}`;
+  const multiplierText = battleMultiplierFormula(result);
   const scoreBonusTotal = (result.scoreBonuses || []).reduce((sum, bonus) => sum + Number(bonus.amount || 0), 0);
   const scoreFactorText = (result.scoreFactors || []).length
     ? ` x ${(result.scoreFactors || []).map((entry) => entry.factor).join(" x ")}`
@@ -1623,7 +1650,7 @@ function buildBattleScoreOverlay() {
     ? `${result.chips} x ${result.multiplier}${scoreFactorText}${scoreBonusTotal ? ` + ${scoreBonusTotal}` : ""} = ${result.score}`
     : `${result.chips} x ${result.multiplier} = ${result.score}`;
   const scoreFormula = finalScoreFactorText
-    ? `(${result.chips} x ${result.multiplier}${scoreFactorText}${scoreBonusTotal ? ` + ${scoreBonusTotal}` : ""})${finalScoreFactorText} = ${result.score}`
+    ? `(${result.chips} x ${result.multiplier}${scoreFactorText})${finalScoreFactorText}${scoreBonusTotal ? ` + ${scoreBonusTotal}` : ""} = ${result.score}`
     : scoreFormulaBeforeFinalFactors;
 
   return el("div", { className: "score-calc-backdrop", role: "presentation" }, [
@@ -1657,11 +1684,30 @@ function buildBattleScoreOverlay() {
         ])),
         el("span", {}, [`${t("Hand multiplier")}: ${translateBattleHand(result.handName)} x ${multiplierText}`]),
         ...(result.scoreFactors || []).map((factor) => el("span", {}, [`${battleEffectName({ kind: factor.kind })}: x${factor.factor}`])),
-        ...(result.finalScoreFactors || []).map((factor) => el("span", {}, [`${battleEffectName({ kind: factor.kind })}: x${factor.factor} ${t("Final score")}`])),
+        ...(result.finalScoreFactors || []).map((factor) => el("span", {}, [`${battleEffectName({ kind: factor.kind })}: x${factor.factor} ${isZh() ? "手牌分" : "hand score"}`])),
         el("strong", {}, [`${t("Final score")}: ${scoreFormula}`])
       ])
     ])
   ]);
+}
+
+function battleMultiplierFormula(result) {
+  const multiplierBonus = Number(result?.bonusMultiplier || 0);
+  const baseMultiplier = Number(result?.baseMultiplier || 0);
+  const additiveText = `${baseMultiplier}${multiplierBonus ? ` + ${multiplierBonus}` : ""}`;
+  const factors = result?.multiplierFactors || [];
+  const effectExpression = factors.length
+    ? `(${additiveText}) x ${factors.map((entry) => entry.factor).join(" x ")}`
+    : additiveText;
+  const multiplierBeforeFateDice = Number(result?.multiplierBeforeFateDice ?? result?.multiplier) || 0;
+  const fateDiceMultiplier = Number(result?.fateDiceMultiplier) || 0;
+  if (fateDiceMultiplier > 0) {
+    return `max(${effectExpression}, ${fateDiceMultiplier}) = ${result.multiplier}`;
+  }
+  if (factors.length || multiplierBonus || multiplierBeforeFateDice !== baseMultiplier) {
+    return `${effectExpression} = ${result.multiplier}`;
+  }
+  return `${result?.multiplier ?? 0}`;
 }
 
 function battleRulesHost() {
@@ -1793,7 +1839,7 @@ function battleEffectRuleText() {
       "面包和黄油：从本回合开始，本局之后所有顺子牌型倍率 +2。每位玩家每局只能选择一次。",
       "面包和奶酪：从本回合开始，本局之后所有三条牌型倍率 +3。每位玩家每局只能选择一次。",
       "面包和果酱：从本回合开始，本局之后所有两对牌型倍率 +4。每位玩家每局只能选择一次。",
-      "星界躯体：本回合最终分额外 +1000；但从本回合开始，本局之后每回合最终得分降低至 50% 并取整数。每位玩家每局只能选择一次。",
+      "星界躯体：选择时额外 +1000 最终分，该加分不受减益；从本回合起只降低手牌结算分，第 1/2/3/4 回合分别降为 70%/70%/60%/50%，第 5 回合不再减益。每位玩家每局只能选择一次。",
       "钢化番茄：从本回合开始持续判定；有效番茄命中次数超过 30 或有效投掷次数超过 50 后，每回合在手牌结算后额外加入（命中次数 ×0.5 + 投掷次数 ×0.2）×0.5，并保留一位小数。每位玩家每局只能选择一次。",
       "回归基本功：只会在第 2/3 回合出现；从本回合开始，本局之后不能再选择任何特效；第 2/3/4/5 回合分别获得 +15/+20/+20/+22 点数和 +1/+1.5/+1.5/+1.75 倍率。每位玩家每局只能选择一次。",
       "亮出你的剑：只会在第 2/3 回合出现；从本回合开始，本局之后不能再弃牌；第 2/3/4/5 回合分别获得 +10/+15/+15/+18 点数和 +2/+2.5/+2.5/+2.75 倍率。每位玩家每局只能选择一次。若之后选择刷新球，则重新允许弃牌但保留亮剑加成。",
@@ -1833,7 +1879,7 @@ function battleEffectRuleText() {
     "Bread and butter: from this round onward, your Straights gain +2 multiplier for the rest of this game. Once per game.",
     "Bread and cheese: from this round onward, your Three of a Kind gains +3 multiplier for the rest of this game. Once per game.",
     "Bread and Jam: from this round onward, your Two Pair gains +4 multiplier for the rest of this game. Once per game.",
-    "Astral Body: this round gains +1000 final score, but from this round onward all your final scores are reduced to 50% and floored. Once per game.",
+    "Astral Body: gain +1000 final score when selected; that bonus is not reduced. Only hand score is reduced to 70%/70%/60%/50% in rounds 1/2/3/4, with no penalty in round 5. Once per game.",
     "Tempered Tomato: from this round onward, the threshold is checked continuously. If it is not active when selected, it activates in any later round once effective tomato hits exceed 30 or effective throws exceed 50, then each round adds hits x0.5 plus throws x0.2 chips, rounded to one decimal. Once per game.",
     "Returning to the fundamentals: only appears in rounds 2/3. From this round onward, you cannot choose more effects. In rounds 2/3/4/5, gain +15/+20/+20/+22 chips and +1/+1.5/+1.5/+1.75 multiplier. Once per game.",
     "Draw your sword: only appears in rounds 2/3. From this round onward, you cannot discard. In rounds 2/3/4/5, gain +10/+15/+15/+18 chips and +2/+2.5/+2.5/+2.75 multiplier. Once per game. Refresher Orb can re-enable discards without removing these bonuses.",
@@ -1934,7 +1980,7 @@ function battleBalanceRuleText() {
     "Bread and cheese: for the rest of this game, your Three of a Kind gains +1 multiplier and +12 chips. Once per game.",
     "Bread and butter: for the rest of this game, your Two Pair gains +2 multiplier and +5 chips. Once per game.",
     "Bread and Jam: for the rest of this game, your Straights gain +2 multiplier and +3 chips. Once per game.",
-    "Astral Body: this round gains +1000 final score, but later scores this game are halved. Once per game.",
+    "Astral Body: gain +1000 final score outside its penalty; only hand score is reduced in rounds 1-4, and round 5 has no penalty. Once per game.",
     "Tempered Tomato: from this round onward, thresholds are checked continuously. Once effective hits exceed 30 or throws exceed 50, each round adds (hits x0.5 + throws x0.2) x0.75 to final score after hand scoring. Once per game.",
     "Returning to the fundamentals: only appears in rounds 2/3. You cannot choose more effects and immediately gain 4 discard uses. Rounds 2/3/4/5 gain +18 chips and +1.5/+1.5/+1.5/+1.75 multiplier. Once per game.",
     "Draw your sword: only appears in rounds 2/3. You cannot discard. Rounds 2/3/4/5 each gain +15 chips and +2.25 multiplier. Once per game. Refresher Orb can re-enable discards without removing these bonuses.",
@@ -2010,7 +2056,7 @@ function battleBalanceRuleTextZh() {
     "面包和奶酪：从本回合起每回合 +5 点；三条、葫芦、四条再 +7 点、+1 倍率。",
     "面包和黄油：从本回合起每回合 +4 点；一对、两对再 +5 点、+2 倍率。",
     "面包和果酱：从本回合起每回合 +4 点；顺子再 +5 点、+2 倍率。",
-    "星界躯体：本回合最终分 +1000；第 2/3/4 回合总得分分别降至 70%/60%/50%，不会在第 5 回合出现。",
+    "星界躯体：选择时额外 +1000 最终分，该加分不受减益；只降低手牌结算分，第 1/2/3/4 回合分别降为 70%/70%/60%/50%，第 5 回合不再减益。",
     "卢安娜的飓风、领主的致意、收集者、回归基本功、亮出你的剑等持续特效的详细数值会显示在对应特效卡与牌桌状态栏。",
     "所有最终得分在内部计算完成后向下取整为整数。"
   ];
@@ -2038,7 +2084,7 @@ function battleBalanceRuleTextEn() {
     "Bread and cheese: +5 chips every round; Three of a Kind, Full House, and Four of a Kind also gain +7 chips and +1 mult.",
     "Bread and butter: +4 chips every round; One Pair and Two Pair also gain +5 chips and +2 mult.",
     "Bread and Jam: +4 chips every round; Straights also gain +5 chips and +2 mult.",
-    "Astral Body: +1000 final score this round; round 2/3/4+ total score becomes 70%/60%/50%, and it never appears in round 5.",
+    "Astral Body: +1000 final score outside its penalty; only hand score becomes 70%/70%/60%/50% in rounds 1/2/3/4, and round 5 has no penalty.",
     "Persistent effects such as Runaan's Hurricane, Lord Dominick's Regards, The Collector, Returning to the Fundamentals, and Draw Your Sword show their detailed values on their effect cards and table status.",
     "Final scores are floored to integers after the full calculation."
   ];
@@ -2773,7 +2819,8 @@ function renderScoreTable(table) {
       ])
     ]),
     seatGrid,
-    renderScoreFateOverlay(table)
+    renderScoreFateOverlay(table),
+    renderRoyalVictoryOverlay(table)
   );
   return felt;
 }
@@ -2815,11 +2862,59 @@ function renderScoreFateOverlay(table) {
 function renderScoreRoundEffects(table) {
   const effects = table.roundEffects || [];
   if (!effects.length) return "";
-  return el("div", { className: "round-effect-strip" }, effects.map((effect) => el("span", { className: "round-effect-pill" }, [
+  return el("div", { className: "round-effect-strip" }, effects.map((effect) => el("span", {
+    className: "round-effect-pill",
+    tabindex: effect.kind === "void-suit" ? "0" : "-1",
+    title: battleEffectDescription(effect)
+  }, [
     effect.kind === "void-suit"
       ? `${battleSuitName(effect.suit)} ${t("Sealed")}`
       : `${battleEffectName(effect)}: ${battleEffectDescription(effect)}`
   ])));
+}
+
+function renderRoyalVictoryOverlay(table) {
+  const animation = state.royalVictoryAnimation;
+  if (!animation || animation.tableId !== table.id) return "";
+  const elapsedSeconds = Math.max(0, (Date.now() - animation.startedAt) / 1000);
+  if (elapsedSeconds * 1000 >= animation.duration) return "";
+  const positions = [
+    ["50%", "12%"],
+    ["79%", "34%"],
+    ["68%", "72%"],
+    ["32%", "72%"],
+    ["21%", "34%"]
+  ];
+  const cards = animation.cards.map((card, index) => {
+    const [x, y] = positions[index];
+    const flipDelay = 0.45 + index * 0.62 - elapsedSeconds;
+    return el("div", {
+      className: "royal-victory-card-slot",
+      style: `--royal-x:${x};--royal-y:${y};--royal-flip-delay:${flipDelay.toFixed(3)}s`
+    }, [
+      el("div", { className: "royal-victory-card-flipper" }, [
+        el("img", { className: "royal-victory-card-face is-back", src: "/cards/BACK.svg", alt: "", draggable: false }),
+        el("img", {
+          className: "royal-victory-card-face is-front",
+          src: card.image,
+          alt: card.displayCode || card.code,
+          draggable: false
+        })
+      ])
+    ]);
+  });
+  const textDelay = 3.75 - elapsedSeconds;
+  return el("div", {
+    className: "royal-victory-overlay",
+    role: "status",
+    "aria-live": "assertive"
+  }, [
+    el("div", { className: "royal-victory-cards" }, cards),
+    el("div", { className: "royal-victory-message", style: `--royal-text-delay:${textDelay.toFixed(3)}s` }, [
+      el("strong", {}, [animation.winnerName]),
+      el("span", {}, [isZh() ? "通过皇家同花顺获胜！" : "Wins with a Royal Flush!"])
+    ])
+  ]);
 }
 
 function renderScoreCommunity(table) {
@@ -3004,7 +3099,7 @@ function renderScoreFateLine(seat) {
       : [t("None yet")]);
   }
   if (fate.kind === "giant") {
-    if (fate.giantDefenseActive) details.push(t("Defense active"));
+    if (fate.giantDefenseActive) details.push(`${t("Defense active")} ${Math.round((Number(fate.giantDefenseReduction) || 0) * 100)}%`);
     else if (fate.giantDefenseUsed) details.push(t("Defense used"));
     if (fate.lastGiantPenalty) details.push(`-${fate.lastGiantPenalty}`);
     details.push(`${t("Damage dealt")} ${fate.damageDealt || 0}`);
@@ -3168,17 +3263,7 @@ function renderScorePreview() {
       el("span", {}, [t("Preview unavailable")])
     ]);
   }
-  const multiplierBonus = Number(preview.bonusMultiplier || 0);
-  const additiveTotal = preview.additiveMultiplierTotal ?? (Number(preview.baseMultiplier || 0) + multiplierBonus);
-  const factorText = (preview.multiplierFactors || []).length
-    ? ` x ${(preview.multiplierFactors || []).map((entry) => entry.factor).join(" x ")} = ${preview.multiplier}`
-    : (additiveTotal !== preview.multiplier ? ` = ${preview.multiplier}` : "");
-  const additiveText = `${preview.baseMultiplier}${multiplierBonus ? ` + ${multiplierBonus}` : ""}`;
-  const multiplierText = factorText
-    ? `${(preview.multiplierFactors || []).length ? `(${additiveText})` : additiveText}${factorText}`
-    : multiplierBonus
-      ? `${additiveText} = ${preview.multiplier}`
-      : `${preview.multiplier}`;
+  const multiplierText = battleMultiplierFormula(preview);
   const chipText = (preview.chipFactors || []).length
     ? `${preview.chipTotalBeforeFactors ?? preview.chips} x ${(preview.chipFactors || []).map((entry) => entry.factor).join(" x ")} = ${preview.chips}`
     : `${preview.chips}`;
@@ -3692,31 +3777,31 @@ function scoreFateName(fate) {
 function scoreFateDescription(fate) {
   const kind = fate?.kind;
   const descriptions = isZh() ? {
-    giant: "\u5f00\u5c40\u83b7\u5f97 3300 \u603b\u5206\u548c 8 \u6b21\u5f03\u724c\uff0c\u6240\u6709\u624b\u724c\u500d\u7387 +1\uff1b\u7b2c 2-5 \u56de\u5408\u4e0d\u80fd\u9009\u666e\u901a\u7279\u6548\u3002\u6bcf\u56de\u5408\u5de8\u4eba\u5148\u627f\u53d7 max(\u5de8\u4eba\u5916\u5176\u4ed6\u73a9\u5bb6\u6700\u4f4e\u56de\u5408\u5206x1.3, \u5de8\u4eba\u5916\u5176\u4ed6\u73a9\u5bb6\u6700\u9ad8\u56de\u5408\u5206x50%) \u603b\u5206\u6263\u9664\uff1b\u968f\u540e AOE \u4f7f\u9664\u5de8\u4eba\u5916\u6240\u6709\u73a9\u5bb6\u6263\u9664\u5de8\u4eba\u672c\u56de\u5408\u624b\u724c\u88f8\u5206\u7684 20%\uff0c\u56de\u5408\u5206\u4f4e\u4e8e\u5de8\u4eba\u624b\u724c\u88f8\u5206\u7684\u6240\u6709\u975e\u5de8\u4eba\u73a9\u5bb6\u518d\u53d7\u5230\u731b\u51fb\uff0c\u989d\u5916\u6263\u9664\u8be5\u88f8\u5206\u7684 20%\u3002\u7b2c 1-5 \u56de\u5408\u53ef\u5728\u51fa\u724c\u524d\u4f7f\u7528\u4e00\u6b21\u9632\u5fa1\u59ff\u6001\uff0c\u4ec5\u514d\u9664\u5f53\u56de\u5408\u7684\u5de8\u4eba\u8d1f\u62c5\uff0c\u4e0d\u964d\u4f4e\u56de\u5408\u5f97\u5206\u3002\u6bcf\u5c40\u6700\u591a\u4e00\u4f4d\u5de8\u4eba\u3002",
-    dice: "\u6bcf\u56de\u5408\u7684\u57fa\u7840\u500d\u7387\u53d6 max(\u624b\u724c\u724c\u578b\u500d\u7387, \u6700\u5927\u9ab0\u5b50\u70b9\u6570)\uff0c\u7279\u6548\u500d\u7387\u7ee7\u7eed\u52a0\u7b97\u3002\u6bcf\u4e09\u6b21\u63b7\u51fa x3 \u83b7\u5f97\u989d\u5916\u4e00\u63b7\u3002\u6982\u7387\uff1ax3 8%\u3001x4 18%\u3001x5 22%\u3001x6 25%\u3001x7 9.5%\u3001x8 7%\u3001x10 5.5%\u3001x12 2.5%\u3001x15 1.5%\u3001x20 1%\u3002",
+    giant: "\u5f00\u5c40\u83b7\u5f97 3300 \u603b\u5206\u548c 8 \u6b21\u5f03\u724c\uff1b\u7b2c 2-5 \u56de\u5408\u4e0d\u80fd\u9009\u666e\u901a\u7279\u6548\u3002\u6bcf\u56de\u5408\u5de8\u4eba\u5148\u627f\u53d7 max(\u5de8\u4eba\u5916\u5176\u4ed6\u73a9\u5bb6\u6700\u4f4e\u56de\u5408\u5206x1.3, \u5de8\u4eba\u5916\u5176\u4ed6\u73a9\u5bb6\u6700\u9ad8\u56de\u5408\u5206x50%) \u603b\u5206\u6263\u9664\uff1b\u968f\u540e AOE \u4f7f\u9664\u5de8\u4eba\u5916\u6240\u6709\u73a9\u5bb6\u6263\u9664\u5de8\u4eba\u672c\u56de\u5408\u624b\u724c\u88f8\u5206\u7684 20%\uff0c\u56de\u5408\u5206\u4f4e\u4e8e\u5de8\u4eba\u624b\u724c\u88f8\u5206\u7684\u6240\u6709\u975e\u5de8\u4eba\u73a9\u5bb6\u518d\u53d7\u5230\u731b\u51fb\uff0c\u989d\u5916\u6263\u9664\u8be5\u88f8\u5206\u7684 20%\u3002\u7b2c 1-5 \u56de\u5408\u53ef\u5728\u51fa\u724c\u524d\u4f7f\u7528\u4e00\u6b21\u9632\u5fa1\u59ff\u6001\uff0c\u5206\u522b\u51cf\u514d\u5f53\u56de\u5408\u5de8\u4eba\u8d1f\u62c5\u7684 80%/70%/60%/50%/40%\u3002\u6bcf\u5c40\u6700\u591a\u4e00\u4f4d\u5de8\u4eba\u3002",
+    dice: "\u6bcf\u56de\u5408\u7684\u6700\u7ec8\u500d\u7387\u53d6 max(\u5305\u542b\u6240\u6709\u7279\u6548\u540e\u7684\u624b\u724c\u500d\u7387, \u6700\u5927\u9ab0\u5b50\u70b9\u6570)\u3002\u6bcf\u4e09\u6b21\u63b7\u51fa x3 \u83b7\u5f97\u989d\u5916\u4e00\u63b7\u3002\u6982\u7387\uff1ax3 3%\u3001x4 6%\u3001x5 10%\u3001x6 20%\u3001x7 21.5%\u3001x8 20%\u3001x10 10.5%\u3001x12 5.5%\u3001x15 2.5%\u3001x20 1%\u3002",
     "big-short": "\u6bcf\u56de\u5408\u51fa\u724c\u524d\u505a\u7a7a\u53e6\u4e00\u4f4d\u73a9\u5bb6\uff0c\u4f7f\u5176\u56de\u5408\u5206 -20/-50/-80/-100/-150\u3002\u82e5\u76ee\u6807\u4e3a\u6700\u4f4e\u5206\uff0c\u4f60\u83b7\u5f97 50/100/150/200/300 \u4e0e\u8fde\u80dc\u5956\u52b1\uff1b\u82e5\u9884\u6d4b\u5931\u8d25\uff0c\u4f60\u7684\u603b\u5206\u989d\u5916 -50/-80/-80/-80/-80\u3002",
-    "going-long": "\u6bcf\u56de\u5408\u51fa\u724c\u524d\u505a\u591a\u4e00\u4f4d\u73a9\u5bb6\uff08\u53ef\u4ee5\u9009\u81ea\u5df1\uff09\uff0c\u4f7f\u5176\u56de\u5408\u5206 +20/+50/+50/+50/+100\u3002\u662f\u5426\u9884\u6d4b\u6210\u529f\u4f7f\u7528\u5f53\u524d\u56de\u5408\u3001\u5c1a\u672a\u52a0\u5165\u505a\u591a/\u505a\u7a7a\u76ee\u6807\u589e\u51cf\u7684\u56de\u5408\u5206\u5224\u5b9a\uff1b\u82e5\u76ee\u6807\u4e3a\u6700\u9ad8\u5206\uff0c\u4f60\u83b7\u5f97 50/100/150/200/300 \u4e0e\u8fde\u80dc\u5956\u52b1\u3002",
+    "going-long": "\u6bcf\u56de\u5408\u51fa\u724c\u524d\u505a\u591a\u4e00\u4f4d\u73a9\u5bb6\uff08\u53ef\u4ee5\u9009\u81ea\u5df1\uff09\uff0c\u4f7f\u5176\u56de\u5408\u5206 +20/+50/+50/+50/+100\u3002\u6240\u6709\u505a\u591a/\u505a\u7a7a\u76ee\u6807\u589e\u51cf\u751f\u6548\u540e\uff0c\u82e5\u76ee\u6807\u4e3a\u5f53\u524d\u56de\u5408\u6700\u9ad8\u5206\uff0c\u4f60\u83b7\u5f97 50/100/150/200/300 \u4e0e\u8fde\u80dc\u5956\u52b1\u3002",
     "fate-collector": "\u5f00\u5c40\u5f03\u724c\u6b21\u6570\u6539\u4e3a 6\u3002\u4e94\u56de\u5408\u5185\u7b2c\u4e00\u6b21\u6253\u51fa\u4e00\u79cd\u81ea\u5df1\u6b64\u524d\u672a\u6253\u51fa\u7684\u724c\u578b\u65f6\uff0c\u6309\u7b2c 1/2/3/4/5 \u79cd\u5206\u522b\u83b7\u5f97 +20/+80/+150/+300/+400 \u56de\u5408\u5206\u3002",
     clod: "\u7b2c 1/2/3/4/5 \u56de\u5408\u624b\u724c\u6570\u6539\u4e3a 4/5/6/6/6\uff0c\u5f00\u5c40\u5f03\u724c\u6b21\u6570\u6539\u4e3a 6\uff0c\u4e0d\u518d\u6bcf\u56de\u5408\u989d\u5916\u589e\u52a0\u5f03\u724c\u3002"
   } : {
-    giant: "Start with 3,300 total score, 8 discard uses, and +1 multiplier on every hand. Choose no normal effects in rounds 2-5. Each round, the Giant first loses max(1.3x the lowest non-Giant round score, 50% of the highest non-Giant round score). AOE then deducts 20% of the Giant's bare hand score from every non-Giant player's total. Every non-Giant player whose round score is lower than that bare hand score is also Smashed for another 20%. Once in rounds 1-5, Defense Stance ignores only the Giant's burden for that round without lowering the round score. Only one Giant per game.",
-    dice: "Use max(natural hand multiplier, highest die roll) as the base multiplier; effect multipliers are added afterward. Every three x3 rolls grant an extra roll. Odds: x3 8%, x4 18%, x5 22%, x6 25%, x7 9.5%, x8 7%, x10 5.5%, x12 2.5%, x15 1.5%, x20 1%.",
+    giant: "Start with 3,300 total score and 8 discard uses. Choose no normal effects in rounds 2-5. Each round, the Giant first loses max(1.3x the lowest non-Giant round score, 50% of the highest non-Giant round score). AOE then deducts 20% of the Giant's bare hand score from every non-Giant player's total. Every non-Giant player whose round score is lower than that bare hand score is also Smashed for another 20%. Once in rounds 1-5, Defense Stance reduces that round's Giant burden by 80%/70%/60%/50%/40%. Only one Giant per game.",
+    dice: "The final multiplier is max(the fully effect-adjusted hand multiplier, the highest die roll). Every three x3 rolls grant an extra roll. Odds: x3 3%, x4 6%, x5 10%, x6 20%, x7 21.5%, x8 20%, x10 10.5%, x12 5.5%, x15 2.5%, x20 1%.",
     "big-short": "Short another player for -20/-50/-80/-100/-150 round score. A correct lowest-score prediction grants 50/100/150/200/300 plus streak rewards; a miss costs you 50/80/80/80/80 total score.",
-    "going-long": "Go long any player, including yourself, for +20/+50/+50/+50/+100 round score. Prediction success uses the current round scores before Going Long/Big Short target adjustments; a correct highest-score prediction grants 50/100/150/200/300 plus streak rewards.",
+    "going-long": "Go long any player, including yourself, for +20/+50/+50/+50/+100 round score. After all Going Long and Big Short target adjustments apply, a correct current-round highest-score prediction grants 50/100/150/200/300 plus streak rewards.",
     "fate-collector": "Start with 6 discard uses. The first time you play each new hand type, gain 20/80/150/300/400 round score for your 1st-5th collected type.",
     clod: "Your hand sizes become 4/5/6/6/6 in rounds 1-5 and you start with 6 discard uses. You no longer gain an extra discard each round."
   };
   if (descriptions[kind]) return descriptions[kind];
   if (isZh()) {
-    if (kind === "giant") return "开局获得 3300 总分和 8 次弃牌，所有手牌倍率 +1；AOE 对所有非巨人造成裸分 20% 扣分，回合分低于巨人裸分的玩家再受到裸分 20% 的猛击。";
-    if (kind === "dice") return "每回合掷非六面骰，以本回合最大结果替换基础牌型倍率，普通特效倍率继续加算。初始 1 枚骰子，特定重发/镜像特效会永久增加骰子；每三次掷出 x3 获得一次额外投掷。概率：x3 8%、x4 18%、x5 22%、x6 25%、x7 9.5%、x8 7%、x10 5.5%、x12 2.5%、x15 1.5%、x20 1%。";
+    if (kind === "giant") return "开局获得 3300 总分和 8 次弃牌；AOE 对所有非巨人造成裸分 20% 扣分，回合分低于巨人裸分的玩家再受到裸分 20% 的猛击。防御姿态按回合减免 80%/70%/60%/50%/40% 的巨人负担。";
+    if (kind === "dice") return "每回合掷非六面骰，最终倍率取完整特效倍率与最大骰点的较高者。初始 1 枚骰子，特定重发/镜像特效会永久增加骰子；每三次掷出 x3 获得一次额外投掷。概率：x3 3%、x4 6%、x5 10%、x6 20%、x7 21.5%、x8 20%、x10 10.5%、x12 5.5%、x15 2.5%、x20 1%。";
     if (kind === "big-short") return "每回合出牌前做空另一位玩家，使其本回合得分依次 -20/-50/-80/-100/-150。若目标结算时为最低分，你获得 50/100/150/200/300，并按连续预测正确次数再获得 0/50/100/300/500。";
     if (kind === "going-long") return "每回合出牌前做多一位玩家（可以选择自己），使其本回合得分依次 +20/+50/+50/+50/+100。若目标结算时为最高分，你获得 50/100/150/200/300，并按连续预测正确次数再获得 0/50/100/300/500。";
     if (kind === "fate-collector") return "开局拥有 6 次弃牌。五回合内第一次打出一种自己此前未打出的牌型时，按第 1/2/3/4/5 种分别获得 +20/+80/+150/+300/+400 回合分。";
     if (kind === "clod") return "第 1/2/3/4/5 回合手牌上限改为 5/6/7/7/7，并且每回合额外获得 1 次弃牌机会。";
   } else {
     if (kind === "giant") return "Start with 3,300 total score, 8 discards, and +1 hand multiplier. AOE deals 20% of the bare hand score to every non-Giant; players below that bare score are Smashed for another 20%.";
-    if (kind === "dice") return "Roll a custom die each round and replace the base hand multiplier with your highest roll; normal effect multipliers are added afterward. Start with one die, gain permanent dice from specified reroll/mirror effects, and earn an extra roll after every three x3 results. Odds: x3 8%, x4 18%, x5 22%, x6 25%, x7 9.5%, x8 7%, x10 5.5%, x12 2.5%, x15 1.5%, x20 1%.";
+    if (kind === "dice") return "Roll a custom die each round; the final multiplier is the higher of the fully effect-adjusted hand multiplier and the highest roll. Start with one die, gain permanent dice from specified reroll/mirror effects, and earn an extra roll after every three x3 results. Odds: x3 3%, x4 6%, x5 10%, x6 20%, x7 21.5%, x8 20%, x10 10.5%, x12 5.5%, x15 2.5%, x20 1%.";
     if (kind === "big-short") return "Short another player before each play, reducing their round score by 20/50/80/100/150. If they finish lowest, gain 50/100/150/200/300 plus a 0/50/100/300/500 bonus for a 1-5 prediction streak.";
     if (kind === "going-long") return "Go long any player, including yourself, before each play, increasing their round score by 20/50/50/50/100. If they finish highest, gain 50/100/150/200/300 plus a 0/50/100/300/500 bonus for a 1-5 prediction streak.";
     if (kind === "fate-collector") return "Start with 6 discards. The first time you play each new hand type, gain 20/80/150/300/400 round score for your 1st-5th collected type.";
@@ -3919,11 +4004,11 @@ function battleBalanceEffectDescription(effect) {
     ? "面包和果酱：从本回合起每回合计分点数 +4；顺子时，再 +5 点和 +2 倍率。每局一次。"
     : "Bread and Jam: from this round on gain +4 chips every round; Straights also gain +5 chips and +2 mult. Once per game.";
   if (effect.kind === "astral-body") return isZh()
-    ? "星界躯体：本回合最终分 +1000；从第 2/3/4 回合起，总得分分别降为 70%/60%/50%。不会在第 5 回合出现。每局一次。"
-    : "Astral Body: gain +1000 final score this round, then round 2/3/4+ total score becomes 70%/60%/50%. It never appears in round 5. Once per game.";
+    ? "星界躯体：选择时最终分 +1000，且该加分不受减益；只降低手牌结算分，第 5 回合无减益。每局一次。"
+    : "Astral Body: gain +1000 final score outside the penalty; only hand score is reduced, with no round-5 penalty. Once per game.";
   if (effect.kind === "astral-body-penalty") return isZh()
-    ? "星界躯体惩罚：本回合总得分按当前回合降为 70%/60%/50%。"
-    : "Astral Body penalty: this round's total score is reduced to 70%/60%/50% by round.";
+    ? "星界躯体惩罚：只降低本回合手牌结算分，不影响额外最终分；第 5 回合不再生效。"
+    : "Astral Body penalty: reduces only this round's hand score, not flat final-score bonuses, and no longer applies in round 5.";
   if (effect.kind === "tomato-king") {
     const hits = Math.max(0, Number(effect.tomatoHits) || 0);
     return isZh()
@@ -4083,7 +4168,7 @@ function battleBalanceEffectDescription(effect) {
   if (effect.kind === "astral-body-penalty") {
     return isZh()
       ? "星界身体的持续惩罚：本局之后每回合最终得分变为 50%。"
-      : "Astral Body's persistent penalty: later scores this game are halved.";
+      : "Astral Body: reduces only hand score and no longer penalizes round 5.";
   }
   return "";
 }
