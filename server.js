@@ -1993,6 +1993,7 @@ function createScoreTable(rawName, user) {
     historyRecorded: false,
     giantFateSeatId: null,
     royalVictorySuits: [],
+    royalVictory: null,
     results: [],
     chat: [],
     messages: [`${user.username} opened a score battle table.`]
@@ -2188,6 +2189,7 @@ function startScoreBattle(table) {
   table.historyRecorded = false;
   table.giantFateSeatId = null;
   table.royalVictorySuits = scoreBattle.shuffle(scoreBattle.SUITS).slice(0, 1);
+  table.royalVictory = null;
   table.standings = [];
   table.results = [];
   for (const seat of table.seats) {
@@ -2705,8 +2707,7 @@ function scoreContextForSeat(table, seat, options = {}) {
     turnElapsedMs: options.turnElapsedMs ?? (Date.now() - (table.turnStartedAt || Date.now())),
     criticalExpected: Boolean(options.criticalExpected),
     criticalRolls: Array.isArray(options.criticalRolls) ? options.criticalRolls : [],
-    baseMultiplierOverride: seat.fate?.kind === "dice" ? seat.fateDiceValue : undefined,
-    fateMultiplierBonus: seat.fate?.kind === "giant" ? 1 : 0
+    fateDiceMultiplier: seat.fate?.kind === "dice" ? seat.fateDiceValue : undefined
   };
 }
 
@@ -3135,7 +3136,7 @@ function recordScorePlay(table, seat, cards, automatic) {
   const automaticText = automatic === "one-click" ? " with one-click play" : automatic ? " automatically" : "";
   table.messages.unshift(`${seat.displayName} scored ${result.score} with ${result.handName}${automaticText}.`);
   if (scoreBattle.royalFlushWins(cards, table.royalVictorySuits)) {
-    finishScoreBattle(table, false, seat.seatId);
+    finishScoreBattle(table, false, seat.seatId, cards);
   }
 }
 
@@ -3182,6 +3183,8 @@ function scoreResultForClient(table, seat, cards, result, automatic, scoringEffe
     bonusMultiplier: result.bonusMultiplier,
     additiveMultiplierTotal: result.additiveMultiplierTotal,
     multiplierFactors: result.multiplierFactors || [],
+    multiplierBeforeFateDice: result.multiplierBeforeFateDice,
+    fateDiceMultiplier: result.fateDiceMultiplier,
     multiplier: result.multiplier,
     score: result.score,
     chipTotalBeforeFactors: result.chipTotalBeforeFactors,
@@ -3276,25 +3279,34 @@ function applyScorePostRoundBonuses(table) {
 function applyScoreFatePredictionBonuses(table) {
   const active = activeScoreSeats(table);
   const predictors = active.filter(scoreFateNeedsTarget);
-  const rankingScores = new Map(
-    active.map((seat) => [seat.seatId, Math.max(0, Number(seat.roundScore) || 0)])
+  const predictionPlan = scoreBattle.fatePredictionPlan(
+    active.map((seat) => ({ seatId: seat.seatId, roundScore: seat.roundScore })),
+    predictors.map((seat) => ({
+      seatId: seat.seatId,
+      fateKind: seat.fate.kind,
+      targetSeatId: seat.fateTargetSeatId
+    })),
+    table.round
   );
-  const allRankingScores = Array.from(rankingScores.values());
-  for (const seat of predictors) {
-    const target = active.find((entry) => entry.seatId === seat.fateTargetSeatId);
-    if (!target) continue;
-    const adjustment = scoreBattle.fateTargetAdjustment(seat.fate.kind, table.round);
-    const direction = seat.fate.kind === "going-long" ? 1 : -1;
-    adjustScoreRoundScore(table, target, direction * adjustment, `${seat.fate.kind}-target`, seat.displayName);
+  const predictorsById = new Map(predictors.map((seat) => [seat.seatId, seat]));
+  const seatsById = new Map(active.map((seat) => [seat.seatId, seat]));
+  for (const adjustment of predictionPlan.adjustments) {
+    const source = predictorsById.get(adjustment.sourceSeatId);
+    const target = seatsById.get(adjustment.targetSeatId);
+    if (!source || !target) continue;
+    adjustScoreRoundScore(
+      table,
+      target,
+      adjustment.amount,
+      `${adjustment.fateKind}-target`,
+      source.displayName
+    );
   }
 
+  const outcomesBySeatId = new Map(predictionPlan.outcomes.map((outcome) => [outcome.seatId, outcome]));
   for (const seat of predictors) {
     const target = active.find((entry) => entry.seatId === seat.fateTargetSeatId);
-    const correct = Boolean(target) && scoreBattle.fatePredictionCorrect(
-      seat.fate.kind,
-      rankingScores.get(target.seatId),
-      allRankingScores
-    );
+    const correct = Boolean(target) && Boolean(outcomesBySeatId.get(seat.seatId)?.correct);
     seat.fateLastPredictionCorrect = correct;
     if (!correct) {
       seat.fatePredictionStreak = 0;
@@ -3364,12 +3376,17 @@ function applyScoreGiantSettlement(table, settledHandScores) {
   const seatsById = new Map(active.map((seat) => [seat.seatId, seat]));
 
   giant.fateLastGiantPenalty = 0;
-  if (!isScoreGiantDefenseActive(table, giant)) {
-    const burdenDeducted = deductScoreTotal(giant, plan.burdenPenalty, "giant-penalty", giant.displayName);
-    giant.fateLastGiantPenalty = burdenDeducted;
-    giant.lastGiantDeduction += burdenDeducted;
-    table.messages.unshift(`${giant.displayName} lost ${burdenDeducted} total points to The Giant's burden.`);
-  }
+  const defenseActive = isScoreGiantDefenseActive(table, giant);
+  const burdenDue = defenseActive
+    ? scoreBattle.giantDefensePenalty(plan.burdenPenalty, table.round)
+    : plan.burdenPenalty;
+  const burdenDeducted = deductScoreTotal(giant, burdenDue, "giant-penalty", giant.displayName);
+  giant.fateLastGiantPenalty = burdenDeducted;
+  giant.lastGiantDeduction += burdenDeducted;
+  const defenseText = defenseActive
+    ? ` after Defense Stance reduced it by ${Math.round(scoreBattle.giantDefenseReduction(table.round) * 100)}%`
+    : "";
+  table.messages.unshift(`${giant.displayName} lost ${burdenDeducted} total points to The Giant's burden${defenseText}.`);
 
   for (const seatId of plan.aoeTargetSeatIds) {
     const seat = seatsById.get(seatId);
@@ -3635,7 +3652,7 @@ function processScoreBattleTimeouts() {
   }
 }
 
-function finishScoreBattle(table, abandoned, forcedWinnerSeatId = "") {
+function finishScoreBattle(table, abandoned, forcedWinnerSeatId = "", forcedWinningCards = []) {
   const active = activeScoreSeats(table);
   table.phase = "finished";
   table.phaseDeadline = null;
@@ -3658,6 +3675,12 @@ function finishScoreBattle(table, abandoned, forcedWinnerSeatId = "") {
   table.results = table.standings.map((standing) => `${standing.rank}. ${standing.displayName} - ${standing.totalScore} total (+${standing.coins} coins)`);
   const forcedWinner = active.find((seat) => seat.seatId === forcedWinnerSeatId);
   if (forcedWinner) {
+    table.royalVictory = {
+      gameNumber: table.gameNumber,
+      winnerSeatId: forcedWinner.seatId,
+      winnerName: forcedWinner.displayName,
+      cards: (Array.isArray(forcedWinningCards) ? forcedWinningCards : []).map(cardForClient)
+    };
     table.results.unshift(`${forcedWinner.displayName} won instantly with a Royal Flush.`);
     table.messages.unshift(`${forcedWinner.displayName} completed a Royal Flush and won score battle ${table.gameNumber} immediately.`);
   } else {
@@ -3934,6 +3957,12 @@ function scoreTableView(table, user) {
     winnerSeatIds: table.lastWinnerSeatIds || [],
     victoryGameNumber: table.lastVictoryGameNumber || 0,
     victoryImage: "/assets/victory-special-effect.gif",
+    royalVictory: table.royalVictory ? {
+      gameNumber: table.royalVictory.gameNumber,
+      winnerSeatId: table.royalVictory.winnerSeatId,
+      winnerName: table.royalVictory.winnerName,
+      cards: (table.royalVictory.cards || []).map((card) => ({ ...card }))
+    } : null,
     currentTurnSeatId: table.currentTurnSeatId || null,
     currentTurnName: table.currentTurnSeatId ? table.seats.find((seat) => seat.seatId === table.currentTurnSeatId)?.displayName || "" : "",
     currentRoundLeaderSeatIds: table.currentRoundLeaderSeatIds || [],
@@ -3983,6 +4012,8 @@ function scoreSeatForClient(table, seat, youSeat) {
     bonusMultiplier: seat.lastResult.bonusMultiplier,
     additiveMultiplierTotal: seat.lastResult.additiveMultiplierTotal,
     multiplierFactors: seat.lastResult.multiplierFactors || [],
+    multiplierBeforeFateDice: seat.lastResult.multiplierBeforeFateDice,
+    fateDiceMultiplier: seat.lastResult.fateDiceMultiplier,
     multiplier: seat.lastResult.multiplier,
     score: seat.lastResult.score,
     chipTotalBeforeFactors: seat.lastResult.chipTotalBeforeFactors,
@@ -4072,7 +4103,10 @@ function scoreFateForClient(table, seat) {
     lastGiantPenalty: Math.max(0, Number(seat.fateLastGiantPenalty) || 0),
     damageDealt: Math.max(0, Number(seat.fateGiantDamageDealt) || 0),
     giantDefenseUsed: Boolean(seat.fateGiantDefenseUsed),
-    giantDefenseActive: isScoreGiantDefenseActive(table, seat)
+    giantDefenseActive: isScoreGiantDefenseActive(table, seat),
+    giantDefenseReduction: isScoreGiantDefenseActive(table, seat)
+      ? scoreBattle.giantDefenseReduction(table.round)
+      : 0
   };
 }
 
