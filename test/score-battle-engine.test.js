@@ -9,9 +9,12 @@ const {
   fateCollectorBonus,
   fateDiceValueForRoll,
   fatePredictionCorrect,
+  fatePredictionPlan,
   fateTargetAdjustment,
   findBestPlay,
   giantAoePenalty,
+  giantDefensePenalty,
+  giantDefenseReduction,
   giantFatePenalty,
   giantKillerActiveInRound,
   giantKillerScoreFactor,
@@ -203,12 +206,24 @@ test("FATE target and collection rewards use their separate balance values", () 
   assert.equal(fateCollectorBonus(5), 400);
 });
 
-test("FATE predictions use the pre-adjustment scores from the current round", () => {
-  const currentRoundScores = [120, 150, 90];
-  assert.equal(fatePredictionCorrect("going-long", 120, currentRoundScores), false);
-  assert.equal(fatePredictionCorrect("going-long", 150, currentRoundScores), true);
-  assert.equal(fatePredictionCorrect("big-short", 90, currentRoundScores), true);
-  assert.equal(fatePredictionCorrect("big-short", 120, currentRoundScores), false);
+test("FATE predictions use current-round scores after all target adjustments", () => {
+  const plan = fatePredictionPlan([
+    { seatId: "long-target", roundScore: 100 },
+    { seatId: "short-target", roundScore: 110 },
+    { seatId: "long-player", roundScore: 95 },
+    { seatId: "short-player", roundScore: 100 }
+  ], [
+    { seatId: "long-player", fateKind: "going-long", targetSeatId: "long-target" },
+    { seatId: "short-player", fateKind: "big-short", targetSeatId: "short-target" }
+  ], 1);
+
+  assert.equal(plan.adjustedScores["long-target"], 120);
+  assert.equal(plan.adjustedScores["short-target"], 90);
+  assert.deepEqual(plan.outcomes, [
+    { seatId: "long-player", targetSeatId: "long-target", correct: true },
+    { seatId: "short-player", targetSeatId: "short-target", correct: true }
+  ]);
+  assert.equal(fatePredictionCorrect("going-long", 120, Object.values(plan.adjustedScores)), true);
 });
 
 test("Giant Killer uses the reduced gap multipliers", () => {
@@ -239,50 +254,61 @@ test("Score Battle tomatoes are allowed only during another player's active turn
 test("FATE dice probabilities use the documented cumulative boundaries", () => {
   assert.ok(Math.abs(FATE_DICE_OUTCOMES.reduce((sum, outcome) => sum + outcome.probability, 0) - 1) < 1e-12);
   assert.equal(fateDiceValueForRoll(0), 3);
-  assert.equal(fateDiceValueForRoll(0.079999), 3);
-  assert.equal(fateDiceValueForRoll(0.08), 4);
-  assert.equal(fateDiceValueForRoll(0.259999), 4);
-  assert.equal(fateDiceValueForRoll(0.26), 5);
-  assert.equal(fateDiceValueForRoll(0.479999), 5);
-  assert.equal(fateDiceValueForRoll(0.48), 6);
-  assert.equal(fateDiceValueForRoll(0.729999), 6);
-  assert.equal(fateDiceValueForRoll(0.73), 7);
-  assert.equal(fateDiceValueForRoll(0.824999), 7);
-  assert.equal(fateDiceValueForRoll(0.825), 8);
-  assert.equal(fateDiceValueForRoll(0.894999), 8);
-  assert.equal(fateDiceValueForRoll(0.895), 10);
-  assert.equal(fateDiceValueForRoll(0.949999), 10);
-  assert.equal(fateDiceValueForRoll(0.95), 12);
-  assert.equal(fateDiceValueForRoll(0.974999), 12);
-  assert.equal(fateDiceValueForRoll(0.975), 15);
+  assert.equal(fateDiceValueForRoll(0.029999), 3);
+  assert.equal(fateDiceValueForRoll(0.03), 4);
+  assert.equal(fateDiceValueForRoll(0.089999), 4);
+  assert.equal(fateDiceValueForRoll(0.09), 5);
+  assert.equal(fateDiceValueForRoll(0.189999), 5);
+  assert.equal(fateDiceValueForRoll(0.19), 6);
+  assert.equal(fateDiceValueForRoll(0.389999), 6);
+  assert.equal(fateDiceValueForRoll(0.39), 7);
+  assert.equal(fateDiceValueForRoll(0.604999), 7);
+  assert.equal(fateDiceValueForRoll(0.605), 8);
+  assert.equal(fateDiceValueForRoll(0.804999), 8);
+  assert.equal(fateDiceValueForRoll(0.805), 10);
+  assert.equal(fateDiceValueForRoll(0.909999), 10);
+  assert.equal(fateDiceValueForRoll(0.91), 12);
+  assert.equal(fateDiceValueForRoll(0.964999), 12);
+  assert.equal(fateDiceValueForRoll(0.965), 15);
   assert.equal(fateDiceValueForRoll(0.989999), 15);
   assert.equal(fateDiceValueForRoll(0.99), 20);
   assert.equal(fateDiceValueForRoll(0.999999), 20);
 });
 
-test("The Giant FATE adds one multiplier to every scored hand", () => {
+test("The Giant FATE has no inherent multiplier bonus", () => {
   const high = cards(["2S", "5H", "7D", "9C", "JS"]);
-  const result = scorePlay(high, null, { fateMultiplierBonus: 1 });
+  const result = scorePlay(high, null);
   assert.equal(result.baseMultiplier, 1);
-  assert.equal(result.bonusMultiplier, 1);
-  assert.equal(result.multiplier, 2);
-  assert.equal(result.score, 36);
-  assert.deepEqual(result.multiplierBonuses, [{ kind: "fate-giant", amount: 1 }]);
+  assert.equal(result.bonusMultiplier, 0);
+  assert.equal(result.multiplier, 1);
+  assert.equal(result.score, 18);
+  assert.deepEqual(result.multiplierBonuses, []);
 });
 
-test("The Dice FATE keeps the higher of the hand and rolled multipliers", () => {
+test("The Dice FATE compares its roll with the fully effect-adjusted multiplier", () => {
   const high = cards(["2S", "5H", "7D", "9C", "JS"]);
-  const result = scorePlay(high, { kind: "suit-chip", suit: "S" }, { baseMultiplierOverride: 12 });
+  const result = scorePlay(high, { kind: "suit-chip", suit: "S" }, { fateDiceMultiplier: 12 });
   assert.equal(result.naturalBaseMultiplier, 1);
-  assert.equal(result.baseMultiplier, 12);
+  assert.equal(result.baseMultiplier, 1);
   assert.equal(result.bonusMultiplier, 1);
-  assert.equal(result.multiplier, 13);
-  assert.equal(result.score, 338);
+  assert.equal(result.multiplierBeforeFateDice, 2);
+  assert.equal(result.multiplier, 12);
+  assert.equal(result.score, 312);
 
-  const straightFlush = scorePlay(cards(["9S", "TS", "JS", "QS", "KS"]), null, { baseMultiplierOverride: 3 });
+  const changedStraight = scorePlay(cards(["AS", "2H", "3D", "4C", "5S"]), { kind: "change-straight" }, { fateDiceMultiplier: 6 });
+  assert.equal(changedStraight.naturalBaseMultiplier, 5);
+  assert.equal(changedStraight.multiplierBeforeFateDice, 15);
+  assert.equal(changedStraight.multiplier, 15);
+
+  const straightFlush = scorePlay(cards(["9S", "TS", "JS", "QS", "KS"]), null, { fateDiceMultiplier: 3 });
   assert.equal(straightFlush.naturalBaseMultiplier, 15);
   assert.equal(straightFlush.baseMultiplier, 15);
   assert.equal(straightFlush.multiplier, 15);
+});
+
+test("The Giant's Defense Stance reduces only the burden by its round percentage", () => {
+  assert.deepEqual([1, 2, 3, 4, 5].map(giantDefenseReduction), [0.8, 0.7, 0.6, 0.5, 0.4]);
+  assert.deepEqual([1, 2, 3, 4, 5].map((round) => giantDefensePenalty(100, round)), [20, 30, 40, 50, 60]);
 });
 
 test("bread effects, Astral Body, and crit profiles follow the new rules", () => {
@@ -306,7 +332,14 @@ test("bread effects, Astral Body, and crit profiles follow the new rules", () =>
     persistentEffects: { astralBody: true }
   });
   assert.equal(astral.finalScoreFactors[0].factor, 0.7);
-  assert.equal(astral.score, 712);
+  assert.equal(astral.score, 1012);
+
+  const astralRoundFive = scorePlay(cards(["2S", "5H", "7D", "9C", "JS"]), null, {
+    round: 5,
+    persistentEffects: { astralBody: true }
+  });
+  assert.equal(astralRoundFive.finalScoreFactors.length, 0);
+  assert.equal(astralRoundFive.score, 18);
 
   const profile = criticalProfileForEffects({ danceIllusions: true, runaansHurricane: true });
   assert.equal(profile.chance, 0.5);
