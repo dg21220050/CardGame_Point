@@ -175,9 +175,9 @@ test("only the single selected Royal Flush suit wins instantly", () => {
 test("The Giant burden, AOE, and Smash use the new balance values", () => {
   assert.equal(giantFatePenalty([100, 400]), 200);
   assert.equal(giantFatePenalty([300, 400]), 390);
-  assert.equal(giantAoePenalty(401), 200);
+  assert.equal(giantAoePenalty(401), 80);
   assert.equal(giantAoePenalty(0), 0);
-  assert.equal(giantSmashPenalty(401), 401);
+  assert.equal(giantSmashPenalty(401), 200);
 });
 
 test("The Giant's AOE and Smash only target non-Giant players", () => {
@@ -188,9 +188,9 @@ test("The Giant's AOE and Smash only target non-Giant players", () => {
   ], "giant", 401);
 
   assert.equal(plan.burdenPenalty, 390);
-  assert.equal(plan.aoePenalty, 200);
+  assert.equal(plan.aoePenalty, 80);
   assert.deepEqual(plan.aoeTargetSeatIds, ["first-opponent", "top-opponent"]);
-  assert.equal(plan.smashPenalty, 401);
+  assert.equal(plan.smashPenalty, 200);
   assert.deepEqual(plan.smashTargetSeatIds, ["top-opponent"]);
 });
 
@@ -236,20 +236,25 @@ test("Score Battle tomatoes are allowed only during another player's active turn
 });
 
 test("FATE dice probabilities use the documented cumulative boundaries", () => {
-  assert.equal(FATE_DICE_OUTCOMES.reduce((sum, outcome) => sum + outcome.probability, 0), 1);
+  assert.ok(Math.abs(FATE_DICE_OUTCOMES.reduce((sum, outcome) => sum + outcome.probability, 0) - 1) < 1e-12);
   assert.equal(fateDiceValueForRoll(0), 3);
-  assert.equal(fateDiceValueForRoll(0.129999), 3);
-  assert.equal(fateDiceValueForRoll(0.13), 4);
-  assert.equal(fateDiceValueForRoll(0.309999), 4);
-  assert.equal(fateDiceValueForRoll(0.31), 5);
-  assert.equal(fateDiceValueForRoll(0.529999), 5);
-  assert.equal(fateDiceValueForRoll(0.53), 6);
-  assert.equal(fateDiceValueForRoll(0.749999), 6);
-  assert.equal(fateDiceValueForRoll(0.75), 7);
-  assert.equal(fateDiceValueForRoll(0.844999), 7);
-  assert.equal(fateDiceValueForRoll(0.845), 8);
-  assert.equal(fateDiceValueForRoll(0.914999), 8);
-  assert.equal(fateDiceValueForRoll(0.915), 10);
+  assert.equal(fateDiceValueForRoll(0.079999), 3);
+  assert.equal(fateDiceValueForRoll(0.08), 4);
+  assert.equal(fateDiceValueForRoll(0.259999), 4);
+  assert.equal(fateDiceValueForRoll(0.26), 5);
+  assert.equal(fateDiceValueForRoll(0.479999), 5);
+  assert.equal(fateDiceValueForRoll(0.48), 6);
+  assert.equal(fateDiceValueForRoll(0.729999), 6);
+  assert.equal(fateDiceValueForRoll(0.73), 7);
+  assert.equal(fateDiceValueForRoll(0.824999), 7);
+  assert.equal(fateDiceValueForRoll(0.825), 8);
+  assert.equal(fateDiceValueForRoll(0.894999), 8);
+  assert.equal(fateDiceValueForRoll(0.895), 10);
+  assert.equal(fateDiceValueForRoll(0.949999), 10);
+  assert.equal(fateDiceValueForRoll(0.95), 12);
+  assert.equal(fateDiceValueForRoll(0.974999), 12);
+  assert.equal(fateDiceValueForRoll(0.975), 15);
+  assert.equal(fateDiceValueForRoll(0.989999), 15);
   assert.equal(fateDiceValueForRoll(0.99), 20);
   assert.equal(fateDiceValueForRoll(0.999999), 20);
 });
