@@ -33,15 +33,15 @@ const HANDS = [
 
 const HAND_BY_ID = new Map(HANDS.map((hand) => [hand.id, hand]));
 const FATE_DICE_OUTCOMES = [
-  { value: 3, probability: 0.08 },
-  { value: 4, probability: 0.18 },
-  { value: 5, probability: 0.22 },
-  { value: 6, probability: 0.25 },
-  { value: 7, probability: 0.095 },
-  { value: 8, probability: 0.07 },
-  { value: 10, probability: 0.055 },
-  { value: 12, probability: 0.025 },
-  { value: 15, probability: 0.015 },
+  { value: 3, probability: 0.03 },
+  { value: 4, probability: 0.06 },
+  { value: 5, probability: 0.1 },
+  { value: 6, probability: 0.2 },
+  { value: 7, probability: 0.215 },
+  { value: 8, probability: 0.2 },
+  { value: 10, probability: 0.105 },
+  { value: 12, probability: 0.055 },
+  { value: 15, probability: 0.025 },
   { value: 20, probability: 0.01 }
 ];
 const FATE_TARGET_ADJUSTMENTS = {
@@ -145,6 +145,16 @@ function giantSmashPenalty(giantHandScore) {
   return Math.floor(Math.max(0, Number(giantHandScore) || 0) * 0.2);
 }
 
+function giantDefenseReduction(round) {
+  const reductions = [0, 0.8, 0.7, 0.6, 0.5, 0.4];
+  return reductions[Math.max(0, Math.min(5, Number(round) || 0))] || 0;
+}
+
+function giantDefensePenalty(penalty, round) {
+  const safePenalty = Math.max(0, Number(penalty) || 0);
+  return Math.max(0, Math.round(safePenalty * (1 - giantDefenseReduction(round))));
+}
+
 function giantSettlementPlan(seats, giantSeatId, giantHandScore) {
   const opponents = (Array.isArray(seats) ? seats : [])
     .filter((seat) => seat?.seatId && seat.seatId !== giantSeatId);
@@ -180,6 +190,50 @@ function fatePredictionCorrect(fateKind, targetScore, roundScores) {
   if (fateKind === "going-long") return target === Math.max(...scores);
   if (fateKind === "big-short") return target === Math.min(...scores);
   return false;
+}
+
+function fatePredictionPlan(seats, predictors, round) {
+  const scoreBySeatId = new Map(
+    (Array.isArray(seats) ? seats : [])
+      .filter((seat) => seat?.seatId)
+      .map((seat) => [String(seat.seatId), Math.max(0, Number(seat.roundScore) || 0)])
+  );
+  const validPredictors = (Array.isArray(predictors) ? predictors : [])
+    .filter((predictor) => predictor?.seatId && predictor?.targetSeatId && scoreBySeatId.has(String(predictor.targetSeatId)));
+  const adjustments = [];
+
+  for (const predictor of validPredictors) {
+    const targetSeatId = String(predictor.targetSeatId);
+    const fateKind = String(predictor.fateKind || "");
+    const direction = fateKind === "going-long" ? 1 : -1;
+    const requestedAmount = direction * fateTargetAdjustment(fateKind, round);
+    const previous = scoreBySeatId.get(targetSeatId) || 0;
+    const next = Math.max(0, Math.floor(previous + requestedAmount));
+    const amount = next - previous;
+    scoreBySeatId.set(targetSeatId, next);
+    adjustments.push({
+      sourceSeatId: String(predictor.seatId),
+      targetSeatId,
+      fateKind,
+      amount
+    });
+  }
+
+  const adjustedScores = Object.fromEntries(scoreBySeatId);
+  const allScores = Array.from(scoreBySeatId.values());
+  const outcomes = validPredictors.map((predictor) => {
+    const targetSeatId = String(predictor.targetSeatId);
+    return {
+      seatId: String(predictor.seatId),
+      targetSeatId,
+      correct: fatePredictionCorrect(
+        String(predictor.fateKind || ""),
+        scoreBySeatId.get(targetSeatId),
+        allScores
+      )
+    };
+  });
+  return { adjustments, adjustedScores, outcomes };
 }
 
 function fateCollectorBonus(collectionNumber) {
@@ -290,10 +344,11 @@ function scorePlay(cards, effect, context = {}) {
   const hand = evaluateExactFive(cards);
   const royalFlush = isRoyalFlush(cards);
   const naturalBaseMultiplier = hand.multiplier;
-  const requestedBaseMultiplier = Number(context.baseMultiplierOverride);
-  const baseMultiplier = Number.isFinite(requestedBaseMultiplier) && requestedBaseMultiplier > 0
-    ? Math.max(naturalBaseMultiplier, requestedBaseMultiplier)
-    : naturalBaseMultiplier;
+  const baseMultiplier = naturalBaseMultiplier;
+  const requestedFateDiceMultiplier = Number(context.fateDiceMultiplier);
+  const fateDiceMultiplier = Number.isFinite(requestedFateDiceMultiplier) && requestedFateDiceMultiplier > 0
+    ? requestedFateDiceMultiplier
+    : null;
   const tomatoFinalScoreMultiplier = Math.min(hand.multiplier, 1);
   const scoringIndexes = new Set(hand.scoringIndexes || cards.map((_, index) => index));
   let chips = 0;
@@ -362,8 +417,6 @@ function scorePlay(cards, effect, context = {}) {
     finalScoreFactor *= factor;
     finalScoreFactors.push({ kind, factor });
   }
-
-  addMultiplierBonus("fate-giant", Math.max(0, Number(context.fateMultiplierBonus) || 0));
 
   for (let cardIndex = 0; cardIndex < cards.length; cardIndex += 1) {
     const card = cards[cardIndex];
@@ -586,8 +639,11 @@ function scorePlay(cards, effect, context = {}) {
   }
 
   const additiveMultiplierTotal = baseMultiplier + additiveMultiplier;
-  let multiplier = additiveMultiplierTotal;
-  for (const entry of multiplierFactors) multiplier *= entry.factor;
+  let multiplierBeforeFateDice = additiveMultiplierTotal;
+  for (const entry of multiplierFactors) multiplierBeforeFateDice *= entry.factor;
+  const multiplier = fateDiceMultiplier
+    ? Math.max(multiplierBeforeFateDice, fateDiceMultiplier)
+    : multiplierBeforeFateDice;
   const scoreBeforeBonuses = chips * multiplier * scoreFactor;
   if (effect?.kind === "vigorous") {
     addScoreBonus(effect.kind, Math.min(200, 100 + scoreBeforeBonuses * 0.25));
@@ -600,7 +656,7 @@ function scorePlay(cards, effect, context = {}) {
       addScoreBonus("no-critical-hit", 100);
     }
   }
-  const rawScore = (scoreBeforeBonuses + flatScoreBonus) * finalScoreFactor;
+  const rawScore = scoreBeforeBonuses * finalScoreFactor + flatScoreBonus;
   const score = Math.min(1000000, Math.max(0, Math.floor(rawScore)));
 
   return {
@@ -613,6 +669,8 @@ function scorePlay(cards, effect, context = {}) {
     bonusMultiplier: additiveMultiplier,
     additiveMultiplierTotal,
     multiplierFactors,
+    multiplierBeforeFateDice,
+    fateDiceMultiplier,
     multiplier,
     score,
     chipTotalBeforeFactors,
@@ -636,6 +694,7 @@ function countPairRanks(cards) {
 
 function astralBodyScoreFactor(round) {
   const numericRound = Number(round) || 0;
+  if (numericRound >= 5) return 1;
   if (numericRound <= 2) return 0.7;
   if (numericRound === 3) return 0.6;
   return 0.5;
@@ -763,8 +822,11 @@ module.exports = {
   fateCollectorBonus,
   fateDiceValueForRoll,
   fatePredictionCorrect,
+  fatePredictionPlan,
   fateTargetAdjustment,
   giantAoePenalty,
+  giantDefensePenalty,
+  giantDefenseReduction,
   giantFatePenalty,
   giantKillerActiveInRound,
   giantKillerScoreFactor,
