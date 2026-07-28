@@ -33,22 +33,19 @@ const HANDS = [
 
 const HAND_BY_ID = new Map(HANDS.map((hand) => [hand.id, hand]));
 const FATE_DICE_OUTCOMES = [
-  { value: 3, probability: 0.03 },
-  { value: 4, probability: 0.06 },
-  { value: 5, probability: 0.1 },
+  { value: 3, probability: 0.025 },
+  { value: 4, probability: 0.05 },
+  { value: 5, probability: 0.085 },
   { value: 6, probability: 0.2 },
-  { value: 7, probability: 0.215 },
+  { value: 7, probability: 0.21 },
   { value: 8, probability: 0.2 },
-  { value: 10, probability: 0.105 },
-  { value: 12, probability: 0.055 },
-  { value: 15, probability: 0.025 },
+  { value: 10, probability: 0.13 },
+  { value: 12, probability: 0.06 },
+  { value: 15, probability: 0.03 },
   { value: 20, probability: 0.01 }
 ];
-const FATE_TARGET_ADJUSTMENTS = {
-  "big-short": [0, 20, 50, 80, 100, 150],
-  "going-long": [0, 20, 50, 50, 50, 100]
-};
 const FATE_COLLECTOR_BONUSES = [0, 20, 80, 150, 300, 400];
+const FATE_PREDICTION_SUCCESS_BONUSES = [0, 0, 50, 100, 300, 500];
 
 function createDeck() {
   const deck = [];
@@ -176,11 +173,6 @@ function giantKillerActiveInRound(untilRound, round) {
   return limit > 0 && current > 0 && current <= limit;
 }
 
-function fateTargetAdjustment(fateKind, round) {
-  const values = FATE_TARGET_ADJUSTMENTS[fateKind] || [];
-  return Math.max(0, Number(values[Math.max(0, Number(round) || 0)]) || 0);
-}
-
 function fatePredictionCorrect(fateKind, targetScore, roundScores) {
   const target = Number(targetScore);
   const scores = (Array.isArray(roundScores) ? roundScores : [])
@@ -192,7 +184,17 @@ function fatePredictionCorrect(fateKind, targetScore, roundScores) {
   return false;
 }
 
-function fatePredictionPlan(seats, predictors, round) {
+function nextFatePredictionSuccessCount(currentCount, correct) {
+  const current = Math.max(0, Math.floor(Number(currentCount) || 0));
+  return current + (correct ? 1 : 0);
+}
+
+function fatePredictionSuccessBonus(successCount) {
+  const index = Math.max(0, Math.min(5, Math.floor(Number(successCount) || 0)));
+  return FATE_PREDICTION_SUCCESS_BONUSES[index] || 0;
+}
+
+function fatePredictionPlan(seats, predictors) {
   const scoreBySeatId = new Map(
     (Array.isArray(seats) ? seats : [])
       .filter((seat) => seat?.seatId)
@@ -200,26 +202,6 @@ function fatePredictionPlan(seats, predictors, round) {
   );
   const validPredictors = (Array.isArray(predictors) ? predictors : [])
     .filter((predictor) => predictor?.seatId && predictor?.targetSeatId && scoreBySeatId.has(String(predictor.targetSeatId)));
-  const adjustments = [];
-
-  for (const predictor of validPredictors) {
-    const targetSeatId = String(predictor.targetSeatId);
-    const fateKind = String(predictor.fateKind || "");
-    const direction = fateKind === "going-long" ? 1 : -1;
-    const requestedAmount = direction * fateTargetAdjustment(fateKind, round);
-    const previous = scoreBySeatId.get(targetSeatId) || 0;
-    const next = Math.max(0, Math.floor(previous + requestedAmount));
-    const amount = next - previous;
-    scoreBySeatId.set(targetSeatId, next);
-    adjustments.push({
-      sourceSeatId: String(predictor.seatId),
-      targetSeatId,
-      fateKind,
-      amount
-    });
-  }
-
-  const adjustedScores = Object.fromEntries(scoreBySeatId);
   const allScores = Array.from(scoreBySeatId.values());
   const outcomes = validPredictors.map((predictor) => {
     const targetSeatId = String(predictor.targetSeatId);
@@ -233,7 +215,7 @@ function fatePredictionPlan(seats, predictors, round) {
       )
     };
   });
-  return { adjustments, adjustedScores, outcomes };
+  return { roundScores: Object.fromEntries(scoreBySeatId), outcomes };
 }
 
 function fateCollectorBonus(collectionNumber) {
@@ -641,9 +623,10 @@ function scorePlay(cards, effect, context = {}) {
   const additiveMultiplierTotal = baseMultiplier + additiveMultiplier;
   let multiplierBeforeFateDice = additiveMultiplierTotal;
   for (const entry of multiplierFactors) multiplierBeforeFateDice *= entry.factor;
-  const multiplier = fateDiceMultiplier
-    ? Math.max(multiplierBeforeFateDice, fateDiceMultiplier)
-    : multiplierBeforeFateDice;
+  let multiplier = fateDiceMultiplier
+    ? fateDiceMultiplier + additiveMultiplier
+    : additiveMultiplierTotal;
+  for (const entry of multiplierFactors) multiplier *= entry.factor;
   const scoreBeforeBonuses = chips * multiplier * scoreFactor;
   if (effect?.kind === "vigorous") {
     addScoreBonus(effect.kind, Math.min(200, 100 + scoreBeforeBonuses * 0.25));
@@ -823,7 +806,8 @@ module.exports = {
   fateDiceValueForRoll,
   fatePredictionCorrect,
   fatePredictionPlan,
-  fateTargetAdjustment,
+  fatePredictionSuccessBonus,
+  nextFatePredictionSuccessCount,
   giantAoePenalty,
   giantDefensePenalty,
   giantDefenseReduction,
