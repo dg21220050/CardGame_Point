@@ -2481,18 +2481,15 @@ function chooseScoreFateForSeat(table, seat, fateId) {
   seat.fate = { kind: fate.kind, name: fate.name };
   seat.fateChosen = true;
   seat.fateOptions = [];
+  seat.discardUsesLeft = scoreBattle.fateStartingDiscardUses(fate.kind, SCORE_BATTLE_DISCARD_USES);
   if (fate.kind === "giant") {
     table.giantFateSeatId = seat.seatId;
     seat.totalScore += SCORE_BATTLE_GIANT_STARTING_SCORE;
-    seat.discardUsesLeft = 8;
   } else if (fate.kind === "dice") {
     seat.fateDiceCount = 1;
     resetScoreFateDiceRound(seat);
   } else if (fate.kind === "clod") {
     topUpScoreHand(table, seat, SCORE_BATTLE_CLOD_HAND_SIZES[1]);
-    seat.discardUsesLeft = 6;
-  } else if (fate.kind === "fate-collector") {
-    seat.discardUsesLeft = 6;
   }
   table.messages.unshift(`${seat.displayName} chose FATE: ${fate.name}.`);
   return { ok: true };
