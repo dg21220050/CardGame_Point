@@ -90,7 +90,6 @@ const SCORE_BATTLE_DICE_EFFECTS = new Set([
   "chaos-dice"
 ]);
 const SCORE_BATTLE_FATE_PREDICTION_BONUSES = [0, 50, 100, 150, 200, 300];
-const SCORE_BATTLE_FATE_STREAK_BONUSES = [0, 0, 50, 100, 300, 500];
 const SCORE_BATTLE_BIG_SHORT_MISS_PENALTIES = [0, 50, 80, 80, 80, 80];
 const SCORE_BATTLE_CLOD_HAND_SIZES = [0, 4, 5, 6, 6, 6];
 
@@ -2052,7 +2051,7 @@ function createScoreSeatState(options) {
     fateDiceValue: null,
     fateMisfortune: 0,
     fateTargetSeatId: null,
-    fatePredictionStreak: 0,
+    fatePredictionSuccessCount: 0,
     fateCollectedHandIds: [],
     fateGiantDefenseUsed: false,
     fateGiantDefenseRound: 0,
@@ -2214,7 +2213,7 @@ function startScoreBattle(table) {
     seat.fateDiceValue = null;
     seat.fateMisfortune = 0;
     seat.fateTargetSeatId = null;
-    seat.fatePredictionStreak = 0;
+    seat.fatePredictionSuccessCount = 0;
     seat.fateCollectedHandIds = [];
     seat.fateGiantDefenseUsed = false;
     seat.fateGiantDefenseRound = 0;
@@ -3285,31 +3284,19 @@ function applyScoreFatePredictionBonuses(table) {
       seatId: seat.seatId,
       fateKind: seat.fate.kind,
       targetSeatId: seat.fateTargetSeatId
-    })),
-    table.round
+    }))
   );
-  const predictorsById = new Map(predictors.map((seat) => [seat.seatId, seat]));
-  const seatsById = new Map(active.map((seat) => [seat.seatId, seat]));
-  for (const adjustment of predictionPlan.adjustments) {
-    const source = predictorsById.get(adjustment.sourceSeatId);
-    const target = seatsById.get(adjustment.targetSeatId);
-    if (!source || !target) continue;
-    adjustScoreRoundScore(
-      table,
-      target,
-      adjustment.amount,
-      `${adjustment.fateKind}-target`,
-      source.displayName
-    );
-  }
 
   const outcomesBySeatId = new Map(predictionPlan.outcomes.map((outcome) => [outcome.seatId, outcome]));
   for (const seat of predictors) {
     const target = active.find((entry) => entry.seatId === seat.fateTargetSeatId);
     const correct = Boolean(target) && Boolean(outcomesBySeatId.get(seat.seatId)?.correct);
     seat.fateLastPredictionCorrect = correct;
+    seat.fatePredictionSuccessCount = scoreBattle.nextFatePredictionSuccessCount(
+      seat.fatePredictionSuccessCount,
+      correct
+    );
     if (!correct) {
-      seat.fatePredictionStreak = 0;
       if (seat.fate.kind === "big-short") {
         const penalty = SCORE_BATTLE_BIG_SHORT_MISS_PENALTIES[table.round] || 0;
         const previousTotal = Math.max(0, Number(seat.totalScore) || 0);
@@ -3325,11 +3312,9 @@ function applyScoreFatePredictionBonuses(table) {
       table.messages.unshift(`${seat.displayName}'s ${seat.fate.name} prediction missed.`);
       continue;
     }
-    seat.fatePredictionStreak = Math.max(0, Number(seat.fatePredictionStreak) || 0) + 1;
     const roundBonus = SCORE_BATTLE_FATE_PREDICTION_BONUSES[table.round] || 0;
-    const streakIndex = Math.min(5, seat.fatePredictionStreak);
-    const streakBonus = SCORE_BATTLE_FATE_STREAK_BONUSES[streakIndex] || 0;
-    const bonus = roundBonus + streakBonus;
+    const successCountBonus = scoreBattle.fatePredictionSuccessBonus(seat.fatePredictionSuccessCount);
+    const bonus = roundBonus + successCountBonus;
     adjustScoreRoundScore(table, seat, bonus, seat.fate.kind, seat.displayName);
     table.messages.unshift(`${seat.displayName}'s ${seat.fate.name} prediction succeeded for +${bonus}.`);
   }
@@ -4096,7 +4081,7 @@ function scoreFateForClient(table, seat) {
     misfortune: Math.max(0, Number(seat.fateMisfortune) || 0),
     targetSeatId: seat.fateTargetSeatId || null,
     targetName: target?.displayName || "",
-    predictionStreak: Math.max(0, Number(seat.fatePredictionStreak) || 0),
+    predictionSuccessCount: Math.max(0, Number(seat.fatePredictionSuccessCount) || 0),
     lastPredictionCorrect: seat.fateLastPredictionCorrect ?? null,
     collectedHandCount: (seat.fateCollectedHandIds || []).length,
     collectedHandIds: (seat.fateCollectedHandIds || []).slice(),
