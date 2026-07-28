@@ -11,6 +11,7 @@ const {
   fatePredictionCorrect,
   fatePredictionPlan,
   fatePredictionSuccessBonus,
+  fateStartingDiscardUses,
   findBestPlay,
   giantAoePenalty,
   giantDefensePenalty,
@@ -234,6 +235,16 @@ test("FATE prediction successes accumulate without resetting after a miss", () =
   assert.equal(fatePredictionSuccessBonus(5), 500);
 });
 
+test("FATE starting discard uses include the three six-discard prediction builds", () => {
+  assert.equal(fateStartingDiscardUses("giant"), 8);
+  assert.equal(fateStartingDiscardUses("dice"), 6);
+  assert.equal(fateStartingDiscardUses("big-short"), 6);
+  assert.equal(fateStartingDiscardUses("going-long"), 6);
+  assert.equal(fateStartingDiscardUses("fate-collector"), 6);
+  assert.equal(fateStartingDiscardUses("clod"), 6);
+  assert.equal(fateStartingDiscardUses("unknown", 4), 4);
+});
+
 test("Giant Killer uses the reduced gap multipliers", () => {
   assert.equal(giantKillerScoreFactor({ highestTotalScoreBeforeRound: 1000, totalScoreBeforeRound: 950 }), 1.3);
   assert.equal(giantKillerScoreFactor({ highestTotalScoreBeforeRound: 1000, totalScoreBeforeRound: 850 }), 1.45);
@@ -293,7 +304,7 @@ test("The Giant FATE has no inherent multiplier bonus", () => {
   assert.deepEqual(result.multiplierBonuses, []);
 });
 
-test("The Dice FATE replaces the hand multiplier and adds effect multiplier bonuses", () => {
+test("The Dice FATE compares both base multipliers after adding effect bonuses", () => {
   const high = cards(["2S", "5H", "7D", "9C", "JS"]);
   const result = scorePlay(high, { kind: "suit-chip", suit: "S" }, { fateDiceMultiplier: 12 });
   assert.equal(result.naturalBaseMultiplier, 1);
@@ -321,7 +332,16 @@ test("The Dice FATE replaces the hand multiplier and adds effect multiplier bonu
   assert.equal(straightFlush.naturalBaseMultiplier, 15);
   assert.equal(straightFlush.baseMultiplier, 15);
   assert.equal(straightFlush.bonusMultiplier, 0);
-  assert.equal(straightFlush.multiplier, 3);
+  assert.equal(straightFlush.multiplier, 15);
+
+  const boostedStraightFlush = scorePlay(
+    cards(["9S", "TS", "JS", "QS", "KS"]),
+    { kind: "suit-chip", suit: "S" },
+    { fateDiceMultiplier: 3 }
+  );
+  assert.equal(boostedStraightFlush.bonusMultiplier, 1);
+  assert.equal(boostedStraightFlush.multiplierBeforeFateDice, 16);
+  assert.equal(boostedStraightFlush.multiplier, 16);
 });
 
 test("The Giant's Defense Stance reduces only the burden by its round percentage", () => {
