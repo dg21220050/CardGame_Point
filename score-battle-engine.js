@@ -46,6 +46,14 @@ const FATE_DICE_OUTCOMES = [
 ];
 const FATE_COLLECTOR_BONUSES = [0, 20, 80, 150, 300, 400];
 const FATE_PREDICTION_SUCCESS_BONUSES = [0, 0, 50, 100, 300, 500];
+const FATE_STARTING_DISCARD_USES = new Map([
+  ["giant", 8],
+  ["dice", 6],
+  ["big-short", 6],
+  ["going-long", 6],
+  ["fate-collector", 6],
+  ["clod", 6]
+]);
 
 function createDeck() {
   const deck = [];
@@ -192,6 +200,11 @@ function nextFatePredictionSuccessCount(currentCount, correct) {
 function fatePredictionSuccessBonus(successCount) {
   const index = Math.max(0, Math.min(5, Math.floor(Number(successCount) || 0)));
   return FATE_PREDICTION_SUCCESS_BONUSES[index] || 0;
+}
+
+function fateStartingDiscardUses(fateKind, defaultUses = 4) {
+  const fallback = Math.max(0, Math.floor(Number(defaultUses) || 0));
+  return FATE_STARTING_DISCARD_USES.get(String(fateKind || "")) || fallback;
 }
 
 function fatePredictionPlan(seats, predictors) {
@@ -624,7 +637,10 @@ function scorePlay(cards, effect, context = {}) {
   let multiplierBeforeFateDice = additiveMultiplierTotal;
   for (const entry of multiplierFactors) multiplierBeforeFateDice *= entry.factor;
   let multiplier = fateDiceMultiplier
-    ? fateDiceMultiplier + additiveMultiplier
+    ? Math.max(
+      fateDiceMultiplier + additiveMultiplier,
+      baseMultiplier + additiveMultiplier
+    )
     : additiveMultiplierTotal;
   for (const entry of multiplierFactors) multiplier *= entry.factor;
   const scoreBeforeBonuses = chips * multiplier * scoreFactor;
@@ -807,6 +823,7 @@ module.exports = {
   fatePredictionCorrect,
   fatePredictionPlan,
   fatePredictionSuccessBonus,
+  fateStartingDiscardUses,
   nextFatePredictionSuccessCount,
   giantAoePenalty,
   giantDefensePenalty,
