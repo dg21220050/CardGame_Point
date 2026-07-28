@@ -168,7 +168,8 @@ Object.assign(zhText, {
   "Rolls left": "剩余投掷",
   "Dice": "骰子",
   "Misfortune": "厄运",
-  "Prediction streak": "预测连胜",
+  "Short successes": "\u505a\u7a7a\u6210\u529f\u6b21\u6570",
+  "Long successes": "\u505a\u591a\u6210\u529f\u6b21\u6570",
   "Choose prediction target": "选择预测目标",
   "Collected hands": "已收藏牌型",
   "FATE locked": "已选择 FATE",
@@ -1702,7 +1703,11 @@ function battleMultiplierFormula(result) {
   const multiplierBeforeFateDice = Number(result?.multiplierBeforeFateDice ?? result?.multiplier) || 0;
   const fateDiceMultiplier = Number(result?.fateDiceMultiplier) || 0;
   if (fateDiceMultiplier > 0) {
-    return `max(${effectExpression}, ${fateDiceMultiplier}) = ${result.multiplier}`;
+    const diceAdditiveText = `${fateDiceMultiplier}${multiplierBonus ? ` + ${multiplierBonus}` : ""}`;
+    const diceExpression = factors.length
+      ? `(${diceAdditiveText}) x ${factors.map((entry) => entry.factor).join(" x ")}`
+      : diceAdditiveText;
+    return `${diceExpression} = ${result.multiplier}`;
   }
   if (factors.length || multiplierBonus || multiplierBeforeFateDice !== baseMultiplier) {
     return `${effectExpression} = ${result.multiplier}`;
@@ -3089,7 +3094,8 @@ function renderScoreFateLine(seat) {
   }
   if (["big-short", "going-long"].includes(fate.kind)) {
     if (fate.targetName) details.push(`${t("Target")}: ${fate.targetName}`);
-    details.push(`${t("Prediction streak")} ${fate.predictionStreak || 0}`);
+    const successLabel = fate.kind === "big-short" ? t("Short successes") : t("Long successes");
+    details.push(`${successLabel} ${fate.predictionSuccessCount || 0}`);
   }
   if (fate.kind === "fate-collector") {
     const collectedHandIds = Array.isArray(fate.collectedHandIds) ? fate.collectedHandIds : [];
@@ -3778,35 +3784,20 @@ function scoreFateDescription(fate) {
   const kind = fate?.kind;
   const descriptions = isZh() ? {
     giant: "\u5f00\u5c40\u83b7\u5f97 3300 \u603b\u5206\u548c 8 \u6b21\u5f03\u724c\uff1b\u7b2c 2-5 \u56de\u5408\u4e0d\u80fd\u9009\u666e\u901a\u7279\u6548\u3002\u6bcf\u56de\u5408\u5de8\u4eba\u5148\u627f\u53d7 max(\u5de8\u4eba\u5916\u5176\u4ed6\u73a9\u5bb6\u6700\u4f4e\u56de\u5408\u5206x1.3, \u5de8\u4eba\u5916\u5176\u4ed6\u73a9\u5bb6\u6700\u9ad8\u56de\u5408\u5206x50%) \u603b\u5206\u6263\u9664\uff1b\u968f\u540e AOE \u4f7f\u9664\u5de8\u4eba\u5916\u6240\u6709\u73a9\u5bb6\u6263\u9664\u5de8\u4eba\u672c\u56de\u5408\u624b\u724c\u88f8\u5206\u7684 20%\uff0c\u56de\u5408\u5206\u4f4e\u4e8e\u5de8\u4eba\u624b\u724c\u88f8\u5206\u7684\u6240\u6709\u975e\u5de8\u4eba\u73a9\u5bb6\u518d\u53d7\u5230\u731b\u51fb\uff0c\u989d\u5916\u6263\u9664\u8be5\u88f8\u5206\u7684 20%\u3002\u7b2c 1-5 \u56de\u5408\u53ef\u5728\u51fa\u724c\u524d\u4f7f\u7528\u4e00\u6b21\u9632\u5fa1\u59ff\u6001\uff0c\u5206\u522b\u51cf\u514d\u5f53\u56de\u5408\u5de8\u4eba\u8d1f\u62c5\u7684 80%/70%/60%/50%/40%\u3002\u6bcf\u5c40\u6700\u591a\u4e00\u4f4d\u5de8\u4eba\u3002",
-    dice: "\u6bcf\u56de\u5408\u7684\u6700\u7ec8\u500d\u7387\u53d6 max(\u5305\u542b\u6240\u6709\u7279\u6548\u540e\u7684\u624b\u724c\u500d\u7387, \u6700\u5927\u9ab0\u5b50\u70b9\u6570)\u3002\u6bcf\u4e09\u6b21\u63b7\u51fa x3 \u83b7\u5f97\u989d\u5916\u4e00\u63b7\u3002\u6982\u7387\uff1ax3 3%\u3001x4 6%\u3001x5 10%\u3001x6 20%\u3001x7 21.5%\u3001x8 20%\u3001x10 10.5%\u3001x12 5.5%\u3001x15 2.5%\u3001x20 1%\u3002",
-    "big-short": "\u6bcf\u56de\u5408\u51fa\u724c\u524d\u505a\u7a7a\u53e6\u4e00\u4f4d\u73a9\u5bb6\uff0c\u4f7f\u5176\u56de\u5408\u5206 -20/-50/-80/-100/-150\u3002\u82e5\u76ee\u6807\u4e3a\u6700\u4f4e\u5206\uff0c\u4f60\u83b7\u5f97 50/100/150/200/300 \u4e0e\u8fde\u80dc\u5956\u52b1\uff1b\u82e5\u9884\u6d4b\u5931\u8d25\uff0c\u4f60\u7684\u603b\u5206\u989d\u5916 -50/-80/-80/-80/-80\u3002",
-    "going-long": "\u6bcf\u56de\u5408\u51fa\u724c\u524d\u505a\u591a\u4e00\u4f4d\u73a9\u5bb6\uff08\u53ef\u4ee5\u9009\u81ea\u5df1\uff09\uff0c\u4f7f\u5176\u56de\u5408\u5206 +20/+50/+50/+50/+100\u3002\u6240\u6709\u505a\u591a/\u505a\u7a7a\u76ee\u6807\u589e\u51cf\u751f\u6548\u540e\uff0c\u82e5\u76ee\u6807\u4e3a\u5f53\u524d\u56de\u5408\u6700\u9ad8\u5206\uff0c\u4f60\u83b7\u5f97 50/100/150/200/300 \u4e0e\u8fde\u80dc\u5956\u52b1\u3002",
+    dice: "\u6bcf\u56de\u5408\u7684\u6700\u7ec8\u500d\u7387\u4e3a\u6700\u5927\u9ab0\u5b50\u70b9\u6570 + \u6240\u6709\u5df2\u751f\u6548\u7279\u6548\u7684\u500d\u7387\u52a0\u6210\uff1b\u724c\u578b\u57fa\u7840\u500d\u7387\u4e0d\u4f1a\u989d\u5916\u52a0\u5165\u3002\u6bcf\u4e09\u6b21\u63b7\u51fa x3 \u83b7\u5f97\u989d\u5916\u4e00\u63b7\u3002\u6982\u7387\uff1ax3 2.5%\u3001x4 5%\u3001x5 8.5%\u3001x6 20%\u3001x7 21%\u3001x8 20%\u3001x10 13%\u3001x12 6%\u3001x15 3%\u3001x20 1%\u3002",
+    "big-short": "\u6bcf\u56de\u5408\u51fa\u724c\u524d\u505a\u7a7a\u53e6\u4e00\u4f4d\u73a9\u5bb6\uff0c\u4f46\u4e0d\u4f1a\u6539\u53d8\u8be5\u73a9\u5bb6\u7684\u5206\u6570\u3002\u82e5\u76ee\u6807\u4e3a\u6700\u4f4e\u5206\uff0c\u4f60\u83b7\u5f97 50/100/150/200/300\uff0c\u5e76\u6309\u672c\u5c40\u7d2f\u8ba1\u505a\u7a7a\u6210\u529f\u6b21\u6570\u518d\u83b7\u5f97 0/50/100/300/500\uff1b\u82e5\u9884\u6d4b\u5931\u8d25\uff0c\u4f60\u7684\u603b\u5206\u989d\u5916 -50/-80/-80/-80/-80\u3002",
+    "going-long": "\u6bcf\u56de\u5408\u51fa\u724c\u524d\u505a\u591a\u4e00\u4f4d\u73a9\u5bb6\uff08\u53ef\u4ee5\u9009\u81ea\u5df1\uff09\uff0c\u4f46\u4e0d\u4f1a\u6539\u53d8\u8be5\u73a9\u5bb6\u7684\u5206\u6570\u3002\u82e5\u76ee\u6807\u4e3a\u672c\u56de\u5408\u6700\u9ad8\u5206\uff0c\u4f60\u83b7\u5f97 50/100/150/200/300\uff0c\u5e76\u6309\u672c\u5c40\u7d2f\u8ba1\u505a\u591a\u6210\u529f\u6b21\u6570\u518d\u83b7\u5f97 0/50/100/300/500\u3002",
     "fate-collector": "\u5f00\u5c40\u5f03\u724c\u6b21\u6570\u6539\u4e3a 6\u3002\u4e94\u56de\u5408\u5185\u7b2c\u4e00\u6b21\u6253\u51fa\u4e00\u79cd\u81ea\u5df1\u6b64\u524d\u672a\u6253\u51fa\u7684\u724c\u578b\u65f6\uff0c\u6309\u7b2c 1/2/3/4/5 \u79cd\u5206\u522b\u83b7\u5f97 +20/+80/+150/+300/+400 \u56de\u5408\u5206\u3002",
     clod: "\u7b2c 1/2/3/4/5 \u56de\u5408\u624b\u724c\u6570\u6539\u4e3a 4/5/6/6/6\uff0c\u5f00\u5c40\u5f03\u724c\u6b21\u6570\u6539\u4e3a 6\uff0c\u4e0d\u518d\u6bcf\u56de\u5408\u989d\u5916\u589e\u52a0\u5f03\u724c\u3002"
   } : {
     giant: "Start with 3,300 total score and 8 discard uses. Choose no normal effects in rounds 2-5. Each round, the Giant first loses max(1.3x the lowest non-Giant round score, 50% of the highest non-Giant round score). AOE then deducts 20% of the Giant's bare hand score from every non-Giant player's total. Every non-Giant player whose round score is lower than that bare hand score is also Smashed for another 20%. Once in rounds 1-5, Defense Stance reduces that round's Giant burden by 80%/70%/60%/50%/40%. Only one Giant per game.",
-    dice: "The final multiplier is max(the fully effect-adjusted hand multiplier, the highest die roll). Every three x3 rolls grant an extra roll. Odds: x3 3%, x4 6%, x5 10%, x6 20%, x7 21.5%, x8 20%, x10 10.5%, x12 5.5%, x15 2.5%, x20 1%.",
-    "big-short": "Short another player for -20/-50/-80/-100/-150 round score. A correct lowest-score prediction grants 50/100/150/200/300 plus streak rewards; a miss costs you 50/80/80/80/80 total score.",
-    "going-long": "Go long any player, including yourself, for +20/+50/+50/+50/+100 round score. After all Going Long and Big Short target adjustments apply, a correct current-round highest-score prediction grants 50/100/150/200/300 plus streak rewards.",
+    dice: "The final multiplier is the highest die roll plus all active effect multiplier bonuses; the hand type's base multiplier is not added again. Every three x3 rolls grant an extra roll. Odds: x3 2.5%, x4 5%, x5 8.5%, x6 20%, x7 21%, x8 20%, x10 13%, x12 6%, x15 3%, x20 1%.",
+    "big-short": "Predict another player to finish with the lowest round score without changing that player's score. A correct prediction grants 50/100/150/200/300 plus 0/50/100/300/500 based on cumulative Big Short successes; a miss costs you 50/80/80/80/80 total score.",
+    "going-long": "Predict any player, including yourself, to finish with the highest round score without changing that player's score. A correct prediction grants 50/100/150/200/300 plus 0/50/100/300/500 based on cumulative Going Long successes.",
     "fate-collector": "Start with 6 discard uses. The first time you play each new hand type, gain 20/80/150/300/400 round score for your 1st-5th collected type.",
     clod: "Your hand sizes become 4/5/6/6/6 in rounds 1-5 and you start with 6 discard uses. You no longer gain an extra discard each round."
   };
   if (descriptions[kind]) return descriptions[kind];
-  if (isZh()) {
-    if (kind === "giant") return "开局获得 3300 总分和 8 次弃牌；AOE 对所有非巨人造成裸分 20% 扣分，回合分低于巨人裸分的玩家再受到裸分 20% 的猛击。防御姿态按回合减免 80%/70%/60%/50%/40% 的巨人负担。";
-    if (kind === "dice") return "每回合掷非六面骰，最终倍率取完整特效倍率与最大骰点的较高者。初始 1 枚骰子，特定重发/镜像特效会永久增加骰子；每三次掷出 x3 获得一次额外投掷。概率：x3 3%、x4 6%、x5 10%、x6 20%、x7 21.5%、x8 20%、x10 10.5%、x12 5.5%、x15 2.5%、x20 1%。";
-    if (kind === "big-short") return "每回合出牌前做空另一位玩家，使其本回合得分依次 -20/-50/-80/-100/-150。若目标结算时为最低分，你获得 50/100/150/200/300，并按连续预测正确次数再获得 0/50/100/300/500。";
-    if (kind === "going-long") return "每回合出牌前做多一位玩家（可以选择自己），使其本回合得分依次 +20/+50/+50/+50/+100。若目标结算时为最高分，你获得 50/100/150/200/300，并按连续预测正确次数再获得 0/50/100/300/500。";
-    if (kind === "fate-collector") return "开局拥有 6 次弃牌。五回合内第一次打出一种自己此前未打出的牌型时，按第 1/2/3/4/5 种分别获得 +20/+80/+150/+300/+400 回合分。";
-    if (kind === "clod") return "第 1/2/3/4/5 回合手牌上限改为 5/6/7/7/7，并且每回合额外获得 1 次弃牌机会。";
-  } else {
-    if (kind === "giant") return "Start with 3,300 total score, 8 discards, and +1 hand multiplier. AOE deals 20% of the bare hand score to every non-Giant; players below that bare score are Smashed for another 20%.";
-    if (kind === "dice") return "Roll a custom die each round; the final multiplier is the higher of the fully effect-adjusted hand multiplier and the highest roll. Start with one die, gain permanent dice from specified reroll/mirror effects, and earn an extra roll after every three x3 results. Odds: x3 3%, x4 6%, x5 10%, x6 20%, x7 21.5%, x8 20%, x10 10.5%, x12 5.5%, x15 2.5%, x20 1%.";
-    if (kind === "big-short") return "Short another player before each play, reducing their round score by 20/50/80/100/150. If they finish lowest, gain 50/100/150/200/300 plus a 0/50/100/300/500 bonus for a 1-5 prediction streak.";
-    if (kind === "going-long") return "Go long any player, including yourself, before each play, increasing their round score by 20/50/50/50/100. If they finish highest, gain 50/100/150/200/300 plus a 0/50/100/300/500 bonus for a 1-5 prediction streak.";
-    if (kind === "fate-collector") return "Start with 6 discards. The first time you play each new hand type, gain 20/80/150/300/400 round score for your 1st-5th collected type.";
-    if (kind === "clod") return "Your hand sizes become 5/6/7/7/7 in rounds 1-5, and you gain one extra discard use each round.";
-  }
   return "";
 }
 
@@ -3859,8 +3850,6 @@ function battleEffectName(effect) {
   if (effect.kind === "fate-collector") return scoreFateName(effect);
   if (effect.kind === "big-short") return scoreFateName(effect);
   if (effect.kind === "going-long") return scoreFateName(effect);
-  if (effect.kind === "big-short-target") return isZh() ? "做空目标" : "Short target";
-  if (effect.kind === "going-long-target") return isZh() ? "做多目标" : "Long target";
   if (effect.kind === "giant-penalty") return isZh() ? "巨人负担" : "Giant burden";
   if (effect.kind === "big-short-miss") return isZh() ? "\u505a\u7a7a\u5931\u8d25" : "Big Short miss";
   if (effect.kind === "giant-aoe") return isZh() ? "\u5de8\u4eba AOE" : "Giant AOE";
