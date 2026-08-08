@@ -1,6 +1,6 @@
 const app = document.querySelector("#app");
 const LANG_KEY = "cardgame_point_lang";
-const APP_VERSION = "0.0.8";
+const APP_VERSION = "0.0.9";
 const UPDATE_NOTICE_KEY = "cardgame_point_seen_update";
 const BGM_STORAGE_KEY = "cardgame_point_bgm_enabled";
 const BGM_SRC = "/music/Are-you-lost-park-bird.mp3";
@@ -162,12 +162,15 @@ Object.assign(zhText, {
   "One-click play": "一键出牌",
   "Choosing best play": "正在计算最佳出牌",
   "Choose one FATE before playing.": "出牌前必须选择一个 FATE。",
-  "Choose one of two FATE cards": "从两个 FATE 中选择一个",
+  "Choose one of three FATE cards": "从三个 FATE 中选择一个",
   "FATE is required in round 1.": "第一回合必须选择一个 FATE。",
   "Roll dice": "掷骰子",
   "Rolls left": "剩余投掷",
   "Dice": "骰子",
   "Misfortune": "厄运",
+  "Assassination": "刺杀",
+  "Choose assassination target": "选择刺杀目标",
+  "Assassinations used": "已用刺杀",
   "Short successes": "\u505a\u7a7a\u6210\u529f\u6b21\u6570",
   "Long successes": "\u505a\u591a\u6210\u529f\u6b21\u6570",
   "Choose prediction target": "选择预测目标",
@@ -252,7 +255,7 @@ Object.assign(zhText, {
   "Optional effect": "\u53ef\u9009\u7279\u6548",
   "You may play without choosing an effect.": "\u53ef\u4ee5\u4e0d\u9009\u7279\u6548\u76f4\u63a5\u51fa\u724c\u3002",
   "Played hand cards are removed for the rest of the game. Each player has three discard uses per game.": "\u6253\u51fa\u7684\u624b\u724c\u5728\u672c\u5c40\u5185\u79fb\u9664\uff0c\u6bcf\u4f4d\u73a9\u5bb6\u6bcf\u5c40\u5171\u6709 3 \u6b21\u5f03\u724c\u673a\u4f1a\u3002",
-  "Round hand sizes refill to 3, 4, 5, 5, and 5 cards. Unplayed hand cards stay for the next round.": "\u4e94\u4e2a\u56de\u5408\u4f1a\u5c06\u624b\u724c\u8865\u81f3 3\u30014\u30015\u30015\u30015 \u5f20\uff0c\u672a\u6253\u51fa\u7684\u624b\u724c\u4fdd\u7559\u5230\u4e0b\u4e00\u56de\u5408\u3002",
+  "Non-Giant hand sizes refill to 3, 4, 5, 5, and 5 cards; The Giant refills to 4, 5, 5, 5, and 5. Unplayed hand cards stay for the next round.": "非巨人玩家五个回合的手牌补至 3、4、5、5、5 张；巨人补至 4、5、5、5、5 张。未打出的手牌保留到下一回合。",
   "Played hand cards are removed for the rest of the game. Each player has four discard uses per game.": "\u6253\u51fa\u7684\u624b\u724c\u5728\u672c\u5c40\u5185\u79fb\u9664\uff0c\u6bcf\u4f4d\u73a9\u5bb6\u6bcf\u5c40\u5171\u6709 4 \u6b21\u5f03\u724c\u673a\u4f1a\u3002",
   "Current round leader": "\u672c\u56de\u5408\u6682\u65f6\u9886\u5148",
   "Previous round leader": "\u4e0a\u56de\u5408\u6700\u9ad8\u5206",
@@ -273,7 +276,7 @@ Object.assign(zhText, {
 });
 
 Object.assign(zhText, {
-  "Only cards that make the scored hand contribute base chips; other played cards only score through specific effect bonuses.": "只有凑出当前牌型的牌会贡献基础点数；其他已出牌只有在特定特效加成时才会得分。",
+  "Made-hand cards use full base chips; kickers add 40% of their chips, floored and capped at 20 total. Specific effects can add chips to any played card.": "凑出当前牌型的牌使用完整基础点数；踢脚牌按自身点数的 40%（向下取整）计分，合计最高 20 点。特定特效仍可为任意已出牌额外加点。",
   "Not part of scoring hand": "不参与牌型计分",
   "Bonus only": "仅特效加成",
   "Crit rate": "暴击率",
@@ -301,7 +304,12 @@ Object.assign(zhText, {
 });
 
 Object.assign(zhText, {
+  "Update 0.0.9": "0.0.9 更新内容",
   "Update 0.0.8": "0.0.8 \u66f4\u65b0\u5185\u5bb9",
+  "Round 1 FATE now offers three random choices instead of two.": "第一回合的 FATE 选择由随机二选一改为随机三选一。",
+  "The Hanged Man, Persona, and American Psycho are now available as FATE builds.": "倒吊人、Persona 与美国精神病人现已加入 FATE 构筑。",
+  "Score Battle tomatoes now auto-fire at attack speed, with a default speed of 0.7.": "积分对战番茄现在会按攻速自动持续投掷，默认攻速为 0.7。",
+  "Prediction ties, Giant Weakness, and the latest effect balance rules have been updated.": "并列预测判定、巨人虚弱状态与最新特效平衡规则均已更新。",
   "Music on": "\u97f3\u4e50\u5df2\u5f00\u542f",
   "Music off": "\u97f3\u4e50\u5df2\u5173\u95ed",
   "Music playback could not start.": "\u80cc\u666f\u97f3\u4e50\u65e0\u6cd5\u5f00\u59cb\u64ad\u653e\u3002",
@@ -371,6 +379,25 @@ const zhRank = {
   Twos: "2"
 };
 
+Object.assign(zhText, {
+  "Player list": "\u73a9\u5bb6\u5217\u8868",
+  "Registered players": "\u6ce8\u518c\u73a9\u5bb6",
+  "Player ID": "\u73a9\u5bb6 ID",
+  "Score Battle statistics": "\u79ef\u5206\u5bf9\u6218\u7edf\u8ba1",
+  "Score Battle games": "\u79ef\u5206\u5bf9\u6218\u603b\u5c40\u6570",
+  "Score Battle wins": "\u79ef\u5206\u5bf9\u6218\u80dc\u573a\u6570",
+  "Score Battle win rate": "\u79ef\u5206\u5bf9\u6218\u80dc\u7387",
+  "Favorite FATE": "\u6700\u5e38\u9009\u62e9\u7684 FATE",
+  "Games": "\u603b\u573a\u6570",
+  "Win rate": "\u80dc\u7387",
+  "No FATE data yet.": "\u6682\u65e0 FATE \u6570\u636e",
+  "Loading players...": "\u6b63\u5728\u8bfb\u53d6\u73a9\u5bb6\u5217\u8868...",
+  "No registered players.": "\u6682\u65e0\u6ce8\u518c\u73a9\u5bb6\u3002",
+  "Close": "\u5173\u95ed",
+  "Watch out for Bateman": "\u5c0f\u5fc3\u8d1d\u7279\u66fc",
+  "Run Away": "\u5feb\u9003"
+});
+
 const state = {
   user: null,
   authMode: "login",
@@ -383,7 +410,11 @@ const state = {
   scoreTables: [],
   scoreTable: null,
   profile: null,
+  players: [],
   showProfile: false,
+  showPlayerList: false,
+  playersLoading: false,
+  playerListScroll: 0,
   showPasswordModal: false,
   showFeedbackModal: false,
   passwordDraft: { oldPassword: "", newPassword: "", confirmPassword: "" },
@@ -423,6 +454,9 @@ const state = {
   battleCommunityTimer: null,
   battleScoreSeenKeys: new Set(),
   tomatoSeenKeys: new Set(),
+  scoreTomatoAutoTargetSeatId: "",
+  scoreTomatoAutoTimer: null,
+  scoreTomatoAutoBusy: false,
   battleScoreQueue: [],
   battleScoreOverlay: null,
   battleScoreOverlayTimer: null,
@@ -691,21 +725,76 @@ function canThrowTomato(mode, seat) {
 
 function tomatoButton(mode, seat) {
   if (!canThrowTomato(mode, seat)) return "";
+  const autoActive = mode === "score" && state.scoreTomatoAutoTargetSeatId === seat.seatId;
   return el("button", {
-    className: "tomato-button",
+    className: `tomato-button ${autoActive ? "is-auto-active" : ""}`.trim(),
     type: "button",
-    title: t("Throw tomato"),
+    title: mode === "score"
+      ? (autoActive
+        ? (isZh() ? "停止自动投掷" : "Stop automatic throws")
+        : (isZh() ? "开始自动投掷；再次点击停止" : "Start automatic throws; click again to stop"))
+      : t("Throw tomato"),
     "aria-label": `${t("Throw tomato")}: ${seat.displayName}`,
     onclick: (event) => {
       event.stopPropagation();
-      throwTomato(mode, seat.seatId);
+      if (mode === "score") toggleScoreTomatoAutoTarget(seat.seatId);
+      else throwTomato(mode, seat.seatId);
     }
   }, [el("span", { "aria-hidden": "true" })]);
 }
 
-async function throwTomato(mode, targetSeatId) {
+function toggleScoreTomatoAutoTarget(targetSeatId) {
+  if (state.scoreTomatoAutoTargetSeatId === targetSeatId) {
+    stopScoreTomatoAuto();
+    render();
+    return;
+  }
+  state.scoreTomatoAutoTargetSeatId = targetSeatId;
+  scheduleScoreTomatoAutoThrow(0);
+  render();
+}
+
+function stopScoreTomatoAuto() {
+  if (state.scoreTomatoAutoTimer) window.clearTimeout(state.scoreTomatoAutoTimer);
+  state.scoreTomatoAutoTimer = null;
+  state.scoreTomatoAutoTargetSeatId = "";
+}
+
+function scoreTomatoAutoIntervalMs() {
+  const you = state.scoreTable?.seats?.find((seat) => seat.isYou);
+  return Math.max(200, Number(you?.attackSpeedProfile?.intervalMs) || 2000);
+}
+
+function scheduleScoreTomatoAutoThrow(delayMs = scoreTomatoAutoIntervalMs()) {
+  if (state.scoreTomatoAutoTimer) window.clearTimeout(state.scoreTomatoAutoTimer);
+  if (!state.scoreTomatoAutoTargetSeatId) return;
+  state.scoreTomatoAutoTimer = window.setTimeout(runScoreTomatoAutoThrow, Math.max(0, delayMs));
+}
+
+async function runScoreTomatoAutoThrow() {
+  state.scoreTomatoAutoTimer = null;
+  const target = state.scoreTable?.seats?.find((seat) => seat.seatId === state.scoreTomatoAutoTargetSeatId);
+  if (!target || !canThrowTomato("score", target)) {
+    stopScoreTomatoAuto();
+    render();
+    return;
+  }
+  if (state.scoreTomatoAutoBusy) {
+    scheduleScoreTomatoAutoThrow(100);
+    return;
+  }
+  state.scoreTomatoAutoBusy = true;
+  try {
+    await throwTomato("score", target.seatId, { silent: true });
+  } finally {
+    state.scoreTomatoAutoBusy = false;
+  }
+  if (state.scoreTomatoAutoTargetSeatId) scheduleScoreTomatoAutoThrow();
+}
+
+async function throwTomato(mode, targetSeatId, options = {}) {
   const table = mode === "score" ? state.scoreTable : state.table;
-  if (!table || !targetSeatId) return;
+  if (!table || !targetSeatId) return false;
   const base = mode === "score" ? "score-tables" : "tables";
   try {
     const response = await api(`/api/${base}/${table.id}/tomato`, {
@@ -714,10 +803,12 @@ async function throwTomato(mode, targetSeatId) {
     });
     if (mode === "score") setCurrentScoreTable(response.table);
     else setCurrentTable(response.table);
+    render();
+    return true;
   } catch (error) {
-    state.error = error.message;
+    if (!options.silent) state.error = error.message;
+    return false;
   }
-  render();
 }
 
 function queueTomatoEvents(table, mode) {
@@ -863,6 +954,16 @@ async function refreshProfile(showError = true) {
   }
 }
 
+async function refreshPlayers(showError = true) {
+  if (!state.user) return;
+  try {
+    const response = await api("/api/players");
+    state.players = Array.isArray(response.players) ? response.players : [];
+  } catch (error) {
+    if (showError) state.error = error.message;
+  }
+}
+
 async function refreshTables(showError = true) {
   if (!state.user) return;
   try {
@@ -905,8 +1006,18 @@ async function refreshScoreTable(showError = true) {
   if (!state.currentScoreTableId) return;
   try {
     const response = await api(`/api/score-tables/${state.currentScoreTableId}`);
+    const previousTable = state.scoreTable;
+    const reachedNewFinishedGame = response.table?.phase === "finished" && (
+      previousTable?.phase !== "finished"
+      || Number(previousTable?.gameNumber) !== Number(response.table.gameNumber)
+    );
     state.scoreTableRefreshFailures = 0;
     setCurrentScoreTable(response.table);
+    if (reachedNewFinishedGame) {
+      const refreshes = [refreshProfile(false)];
+      if (state.showPlayerList) refreshes.push(refreshPlayers(false));
+      await Promise.all(refreshes);
+    }
   } catch (error) {
     if (showError) state.error = error.message;
     if (isConfirmedMissingScoreTable(error) || showError) {
@@ -950,7 +1061,13 @@ function setCurrentScoreTable(table) {
     state.battleEffectTarget = null;
   }
   const you = table.seats.find((seat) => seat.isYou);
-  const availableCodes = new Set([...(you?.hand || []), ...(table.community || [])].map((card) => card.code));
+  const personaTokens = (table.seats || [])
+    .map((seat) => seat.personaVisibleCard?.token)
+    .filter(Boolean);
+  const availableCodes = new Set([
+    ...[...(you?.hand || []), ...(table.community || [])].map((card) => card.code),
+    ...personaTokens
+  ]);
   state.battleSelections = state.battleSelections.filter((code) => availableCodes.has(code));
   if (state.battleEffectTarget) {
     state.battleEffectTarget.cardTargets = state.battleEffectTarget.cardTargets.filter((entry) => availableCodes.has(entry.code));
@@ -961,11 +1078,16 @@ function setCurrentScoreTable(table) {
   queueTomatoEvents(table, "score");
   handleRoyalVictoryAnimation(table);
   handleScoreVictoryEffect(table);
-  handleScoreLossDialog(table);
+  handleScoreEndDialog(table);
+  if (state.scoreTomatoAutoTargetSeatId) {
+    const target = table.seats.find((seat) => seat.seatId === state.scoreTomatoAutoTargetSeatId);
+    if (!target || !canThrowTomato("score", target)) stopScoreTomatoAuto();
+  }
   requestBattleScorePreview();
 }
 
 function clearCurrentScoreTable() {
+  stopScoreTomatoAuto();
   state.scoreTable = null;
   state.scoreTableRefreshFailures = 0;
   state.battleSelectionKey = "";
@@ -1083,6 +1205,7 @@ function handleRoyalVictoryAnimation(table) {
   state.royalVictoryTimer = window.setTimeout(() => {
     if (state.royalVictoryAnimation?.key === key) state.royalVictoryAnimation = null;
     state.royalVictoryTimer = null;
+    handleScoreEndDialog(state.scoreTable);
     render();
   }, 6250);
 }
@@ -1182,6 +1305,7 @@ function render() {
   appendUpdateNotice();
   appendUpdateHistoryModal();
   appendAccountModals();
+  appendPlayerListModal();
   appendScoreLossDialog();
   renderBattleRulesModalHost();
   restoreFocus(focus);
@@ -1199,10 +1323,15 @@ function appendVictoryEffect() {
   ]));
 }
 
-function handleScoreLossDialog(table) {
+function handleScoreEndDialog(table) {
   if (!table || table.phase !== "finished" || !table.youSeatId || !Array.isArray(table.standings)) return;
+  if (
+    Number(table.royalVictory?.gameNumber) === Number(table.gameNumber)
+    && state.royalVictoryAnimation?.tableId === table.id
+  ) return;
   const standing = table.standings.find((entry) => entry.seatId === table.youSeatId);
-  if (!standing || Number(standing.rank) <= 1) return;
+  const you = (table.seats || []).find((seat) => seat.seatId === table.youSeatId);
+  if (!standing) return;
   const key = `${table.id}:${table.gameNumber}:${table.youSeatId}:${standing.rank}`;
   if (state.seenScoreLossKeys.has(key)) return;
   state.seenScoreLossKeys.add(key);
@@ -1210,13 +1339,80 @@ function handleScoreLossDialog(table) {
     key,
     tableId: table.id,
     gameNumber: table.gameNumber,
-    rank: Number(standing.rank) || "-"
+    rank: Number(standing.rank) || "-",
+    won: Number(standing.rank) === 1,
+    endingIds: Array.isArray(you?.endingIds)
+      ? you.endingIds.slice()
+      : (Array.isArray(you?.lossEndingIds) ? you.lossEndingIds.slice() : [])
   };
+}
+
+function scoreLossEndingText(endingId) {
+  const chinese = {
+    "giant-david": "坏结局：不幸的是，您遇到了大卫。",
+    "giant-zero-release": "好结局：在熬了无数个冬天之后，您释怀地似了。",
+    "assassinated-by-american-psycho": "坏结局：您遇到了帕特里克·贝特曼，还激起了他的嫉妒心。",
+    "greenhouse-tomatoes": "坏结局：您的番茄似乎是大棚里种的，没有味儿。",
+    "hanged-man-health": "提示：倒悬有害健康。",
+    "persona-miss": "坏结局：怪盗也有失手的时候。想做个好人？跟警察说去吧。",
+    "american-psycho-paul-allen": "坏结局：遗憾的是，没有人在意谁是保罗·艾伦。",
+    "clod-chocolate": "坏结局：发哥失忆了，还忘带了巧克力。",
+    "dice-probability": "坏结局：概率的大手",
+    "collector-loss": "坏结局：藏品再多，也终有一天会离你而去。",
+    "big-short-kurumi": "坏结局：久留美也选择了做空。",
+    "going-long-kurumi": "坏结局：久留美也选择了做多。",
+    "royal-flush-someone-cheated": "提示：有人开了。"
+  };
+  const english = {
+    "giant-david": "Bad ending: Unfortunately, you met David.",
+    "giant-zero-release": "Good ending: After countless winters, you finally let go.",
+    "assassinated-by-american-psycho": "Bad ending: You met Patrick Bateman and aroused his envy.",
+    "greenhouse-tomatoes": "Bad ending: Your greenhouse tomatoes seem to have no flavor.",
+    "hanged-man-health": "Tip: Hanging upside down is bad for your health.",
+    "persona-miss": "Bad ending: Even a phantom thief can slip up. Want to be a good person? Tell the police.",
+    "american-psycho-paul-allen": "Bad ending: Regrettably, nobody cares who Paul Allen is.",
+    "clod-chocolate": "Bad ending: Brother Mark lost his memory and forgot the chocolate.",
+    "dice-probability": "Bad ending: The heavy hand of probability",
+    "collector-loss": "Bad ending: No matter how many treasures you collect, one day they will leave you.",
+    "big-short-kurumi": "Bad ending: Kurumi chose to go short too.",
+    "going-long-kurumi": "Bad ending: Kurumi chose to go long too.",
+    "royal-flush-someone-cheated": "Tip: Someone turned on cheats."
+  };
+  Object.assign(chinese, {
+    "escaped-american-psycho": "\u597d\u6d88\u606f\uff1a\u60a8\u8eb2\u8fc7\u4e86\u523a\u6740\u3002",
+    "giant-small-step": "\u597d\u7ed3\u5c40\uff1a\u8fd9\u662f\u5de8\u4eba\u7684\u4e00\u5c0f\u6b65...",
+    "hanged-man-win-health": "\u597d\u6d88\u606f\uff1a\u60a8\u80dc\u5229\u4e86\u3002\u574f\u6d88\u606f\uff1a\u5012\u60ac\u6709\u5bb3\u5065\u5eb7\u3002",
+    "persona-own-cards": "\u597d\u7ed3\u5c40\uff1a\u53ea\u7528\u81ea\u5df1\u7684\u724c\uff0c\u5f88\u67af\u71e5\u5427\uff1f",
+    "american-psycho-paul-axe": "\u597d\u7ed3\u5c40\uff1a\u60a8\u7a7f\u6234\u597d\u4e86\u96e8\u8863\uff0c\u4e3e\u8d77\u4e86\u65a7\u5b50\uff1a\u201c\u563f\uff01\u4fdd\u7f57\uff01\u201d",
+    "clod-west-germany": "\u597d\u7ed3\u5c40\uff1a\u60a8\u4f7f\u7528\u4e86\u4e0a\u4e2a\u6708\u897f\u5fb7\u7684\u6700\u65b0\u79d1\u6280\uff01",
+    "dice-probability-win": "\u597d\u7ed3\u5c40\uff1a\u6982\u7387\u7684\u5927\u624b",
+    "collector-palace": "\u597d\u7ed3\u5c40\uff1a\u6545\u5bab\u4e00\u4ef6\u60a8\u4e00\u4ef6\uff0c\u6545\u5bab\u6ca1\u6b3e\u60a8\u6709\u6b3e\u3002",
+    "big-short-win-kurumi": "\u597d\u7ed3\u5c40\uff1a\u60a8\u6210\u529f\u505a\u7a7a\u4e86\u4e45\u7559\u7f8e\u3002",
+    "going-long-win-kurumi": "\u597d\u7ed3\u5c40(?)\uff1a\u60a8\u6210\u529f\u505a\u591a\u4e86\u4e45\u7559\u7f8e\u3002",
+    "tomato-god": "\u597d\u7ed3\u5c40\uff1a\u756a\u8304\u4e4b\u795e\u56de\u5e94\u4e86\u60a8\u7684\u7948\u7977\u3002",
+    "royal-flush-exodia": "\u597d\u7ed3\u5c40\uff1a\u60a8\u96c6\u9f50\u4e86\u9ed1\u6697\u5927\u6cd5\u5e08\u3002"
+  });
+  Object.assign(english, {
+    "escaped-american-psycho": "Good news: You escaped the Assassination.",
+    "giant-small-step": "Good ending: One small step for The Giant...",
+    "hanged-man-win-health": "Good news: You won. Bad news: Hanging upside down is bad for your health.",
+    "persona-own-cards": "Good ending: Playing only your own cards would be rather dull, wouldn't it?",
+    "american-psycho-paul-axe": "Good ending: You put on your raincoat and raised the axe: Hey, Paul!",
+    "clod-west-germany": "Good ending: You used last month's latest West German technology!",
+    "dice-probability-win": "Good ending: The heavy hand of probability",
+    "collector-palace": "Good ending: One for the Palace Museum, one for you; what the Palace lacks, you own.",
+    "big-short-win-kurumi": "Good ending: You successfully shorted Kurumi.",
+    "going-long-win-kurumi": "Good ending(?): You successfully went long on Kurumi.",
+    "tomato-god": "Good ending: The Tomato God answered your prayer.",
+    "royal-flush-exodia": "Good ending: You assembled Exodia the Forbidden One."
+  });
+  return (isZh() ? chinese : english)[endingId] || "";
 }
 
 function appendScoreLossDialog() {
   const dialog = state.scoreLossDialog;
   if (!dialog || !state.user) return;
+  const endingLines = (dialog.endingIds || []).map(scoreLossEndingText).filter(Boolean);
   app.appendChild(el("div", { className: "modal-backdrop score-loss-backdrop", role: "presentation" }, [
     el("section", { className: "update-modal score-loss-modal", role: "dialog", "aria-modal": "true", "aria-labelledby": "score-loss-title" }, [
       el("button", {
@@ -1227,6 +1423,9 @@ function appendScoreLossDialog() {
       }, ["x"]),
       el("span", { className: "pill" }, [t("Final standings")]),
       el("h2", { id: "score-loss-title" }, [`${t("Your rank")}: ${dialog.rank}`]),
+      endingLines.length ? el("div", { className: "score-loss-ending-list" }, endingLines.map((line) => el("p", {
+        className: "score-loss-ending-line"
+      }, [line]))) : "",
       el("button", { type: "button", onclick: tryScoreBattleAgain }, [t("Try again?")])
     ])
   ]));
@@ -1259,6 +1458,10 @@ function appendUpdateNotice() {
         el("button", { className: "ghost modal-close", type: "button", onclick: dismissUpdateNotice, "aria-label": t("Got it") }, ["x"])
       ]),
       el("ul", { className: "update-list" }, [
+        el("li", {}, [t("Round 1 FATE now offers three random choices instead of two.")]),
+        el("li", {}, [t("The Hanged Man, Persona, and American Psycho are now available as FATE builds.")]),
+        el("li", {}, [t("Score Battle tomatoes now auto-fire at attack speed, with a default speed of 0.7.")]),
+        el("li", {}, [t("Prediction ties, Giant Weakness, and the latest effect balance rules have been updated.")]),
         el("li", {}, [t("Personal decks now refresh when exhausted, and replacement cards from a refreshed deck are marked as Second deck.")]),
         el("li", {}, [t("Turns now last 120 seconds, with updated FATE and Rambo balance.")]),
         el("li", {}, [t("Other players' cards are hidden until hovered or tapped, and table controls now share one row.")]),
@@ -1283,6 +1486,15 @@ function appendUpdateNotice() {
 
 function updateHistoryEntries() {
   return [
+    {
+      version: "0.0.9",
+      items: [
+        "Round 1 FATE now offers three random choices instead of two.",
+        "The Hanged Man, Persona, and American Psycho are now available as FATE builds.",
+        "Score Battle tomatoes now auto-fire at attack speed, with a default speed of 0.7.",
+        "Prediction ties, Giant Weakness, and the latest effect balance rules have been updated."
+      ]
+    },
     {
       version: "0.0.8",
       items: [
@@ -1771,10 +1983,22 @@ function buildBattleRulesModal() {
           el("h3", {}, [t("Rules note")]),
           el("ul", { className: "update-list" }, [
             el("li", {}, [t("Choose five cards from your hand and the community board. At least one card must be a community card.")]),
-            el("li", {}, [t("Only cards that make the scored hand contribute base chips; other played cards only score through specific effect bonuses.")]),
-            el("li", {}, [t("Round hand sizes refill to 3, 4, 5, 5, and 5 cards. Unplayed hand cards stay for the next round.")]),
+            el("li", {}, [t("Made-hand cards use full base chips; kickers add 40% of their chips, floored and capped at 20 total. Specific effects can add chips to any played card.")]),
+            el("li", {}, [t("Non-Giant hand sizes refill to 3, 4, 5, 5, and 5 cards; The Giant refills to 4, 5, 5, 5, and 5. Unplayed hand cards stay for the next round.")]),
             el("li", {}, [t("Discard uses have no total cap. If a personal deck runs out, it refreshes without community or retained hand cards; replacements are marked Second deck.")]),
-            el("li", {}, [t("Each score-battle turn lasts 120 seconds.")])
+            el("li", {}, [t("Each score-battle turn lasts 120 seconds.")]),
+            el("li", {}, [isZh()
+              ? "参与牌型计分的牌和有点数贡献的踢脚牌均可暴击；仅当暴击率大于 0% 且本回合没有触发暴击时，最终得分额外 +100。"
+              : "Made-hand cards and contributing kickers may crit. Only a player with crit chance above 0% gains +100 final score after a no-crit round."]),
+            el("li", {}, [isZh()
+              ? "每局只有回合数旁标出的一个花色皇家同花顺可以立即获胜。"
+              : "Only the one Royal Flush suit shown beside the round counter wins instantly."]),
+            el("li", {}, [isZh()
+              ? "点击其他玩家的番茄图标开始按攻速自动投掷；再次点击停止，点击另一玩家切换目标。默认攻速 0.7。"
+              : "Click an opponent's tomato icon to auto-fire; click again to stop or another player to switch. Default attack speed is 0.7."]),
+            el("li", {}, [isZh()
+              ? "被巨人扣至 0 总分的非巨人玩家，下一回合进入“虚弱”，完整手牌得分降为 75%。"
+              : "A non-Giant reduced to 0 by Giant deductions is Weakened next round and scores 75%."])
           ]),
           el("h3", {}, ["FATE"]),
           el("ul", { className: "update-list rules-effect-list" }, scoreFateRuleText().map((line) => el("li", {}, [line]))),
@@ -1791,7 +2015,7 @@ function buildBattleRulesModal() {
 }
 
 function scoreFateRuleText() {
-  return ["giant", "dice", "big-short", "going-long", "fate-collector", "clod"]
+  return ["giant", "dice", "big-short", "going-long", "fate-collector", "clod", "hanged-man", "persona", "american-psycho"]
     .map((kind) => {
       const fate = { kind };
       return `${scoreFateName(fate)}: ${scoreFateDescription(fate)}`;
@@ -1813,216 +2037,7 @@ function scoreRuleRows() {
 }
 
 function battleEffectRuleText() {
-  const balancedRules = battleBalanceRuleText();
-  if (balancedRules.length) {
-    const ramboName = battleEffectName({ kind: "rambo" });
-    return balancedRules.map((line) => line.startsWith(`${ramboName}:`)
-      ? `${ramboName}: ${battleEffectDescription({ kind: "rambo" })}`
-      : line);
-  }
-  if (isZh()) {
-    return [
-      "同花色点数增强：指定花色的已出牌每张 +4 点。",
-      "点数增强：指定点数的已出牌每张 +7 点。",
-      "红色增幅：已出的红桃和方块每张 +3 点。",
-      "对子引擎：只有牌型为一对或两对时，倍率 +2。",
-      "同花引擎：只有牌型为同花或同花顺时，倍率 +1.5。",
-      "虚无封印：从选择者开始，本回合之后顺序出牌玩家的指定花色点数 -3，最低降到 0；选择者本人打出的该花色牌不扣点，改为每张 +4 点，且只要打出的 5 张牌中包含该花色，倍率 +1。",
-      "花色复制：按顺序选择两张自己的手牌，第一张手牌复制第二张手牌的花色；本回合倍率 +2.5。",
-      "暗隐置换：选择一张自己的手牌与一张公共牌交换，交换后的公共牌会影响本回合之后顺序出牌的玩家；本回合总点数 +5，倍率 +1。",
-      "虚空侵蚀：选择并移除一张公共牌，然后从牌库补发一张新的公共牌，新的公共牌会影响之后顺序出牌的玩家；本回合总点数 +5，倍率 +1。",
-      "镜中世界：将 5 张公共牌全部变成点数互补的牌，A/K 互换，Q/2、J/3、10/4、9/5、8/6 互换，7 不变；变化后的公共牌会影响之后顺序出牌的玩家；本回合总点数 +6，倍率 +2。",
-      "镜中人：将自己的全部手牌变成点数互补的牌，互补规则与镜中世界相同；本回合总点数 +6，倍率 +2。",
-      "德莱联盟：本回合倍率 +3.5；若该玩家在本回合得分最高，回合结算后额外获得当前所有玩家中最高总分的 20%。",
-      "歌莉娅：将自己的手牌在不改变花色的前提下，变为 8、9、10、J、Q、K 中不完全相同的点数。",
-      "虚空索敌：选择自己的两张手牌，并指定一名本回合尚未出牌的玩家，与其随机两张手牌交换；本回合倍率 +1，且总点数额外加上换得两张手牌的点数和。",
-      "混沌骰子：将本回合尚未出牌的所有玩家，包括自己在内，手牌全部随机重发；选择者本回合倍率 +1，且总点数额外加上本次所有被重发手牌总数 x0.5。",
-      "番茄大王：本回合手牌按正常牌型倍率结算后，再在最终分额外加上本局此前被其他玩家投掷番茄命中的次数 ×1.5；本回合倍率 +1。每位玩家每局只能选择一次。",
-      "番茄射手：本回合手牌按正常牌型倍率结算后，再在最终分额外加上本局此前向其他玩家投掷番茄的次数 ×1.5；本回合倍率 +1。每位玩家每局只能选择一次。",
-      "同花大顺：当玩家打出同花顺时，最终分额外 +1000。",
-      "质变：顺子：选择后若打出的牌型为顺子，该手牌按同花顺倍率计算。每位玩家每局只能选择一次。",
-      "叠角龙：选择该特效的玩家本回合倍率 +3；本局内该玩家被番茄击中和向别人投掷番茄的有效计数变为 3 倍，包括选择前已有计数。每位玩家每局只能选择一次。",
-      "面包和黄油：从本回合开始，本局之后所有顺子牌型倍率 +2。每位玩家每局只能选择一次。",
-      "面包和奶酪：从本回合开始，本局之后所有三条牌型倍率 +3。每位玩家每局只能选择一次。",
-      "面包和果酱：从本回合开始，本局之后所有两对牌型倍率 +4。每位玩家每局只能选择一次。",
-      "星界躯体：选择时额外 +1000 最终分，该加分不受减益；从本回合起只降低手牌结算分，第 1/2/3/4 回合分别降为 70%/70%/60%/50%，第 5 回合不再减益。每位玩家每局只能选择一次。",
-      "钢化番茄：从本回合开始持续判定；有效番茄命中次数超过 30 或有效投掷次数超过 50 后，每回合在手牌结算后额外加入（命中次数 ×0.5 + 投掷次数 ×0.2）×0.5，并保留一位小数。每位玩家每局只能选择一次。",
-      "回归基本功：只会在第 2/3 回合出现；从本回合开始，本局之后不能再选择任何特效；第 2/3/4/5 回合分别获得 +15/+20/+20/+22 点数和 +1/+1.5/+1.5/+1.75 倍率。每位玩家每局只能选择一次。",
-      "亮出你的剑：只会在第 2/3 回合出现；从本回合开始，本局之后不能再弃牌；第 2/3/4/5 回合分别获得 +10/+15/+15/+18 点数和 +2/+2.5/+2.5/+2.75 倍率。每位玩家每局只能选择一次。若之后选择刷新球，则重新允许弃牌但保留亮剑加成。",
-      "关键暴击：从本回合开始，本局之后所有回合，每张打出的牌各有 50% 几率暴击；暴击牌在点数计算时乘以 1.75。预估分使用期望值显示，正式结算会逐牌随机。",
-      "无尽之刃：从本回合开始，本局之后所有回合暴击率 +25%，并将暴击倍率提高到 2.25。暴击率与其他暴击特效加算，超过 100% 按 100% 计算。每位玩家每局只能选择一次。",
-      "残暴之力：本回合总点数 +25，倍率 +1。",
-      "大力：本回合计分点数之和 x1.5 后再乘以牌型倍率。",
-      "刷新球：本回合倍率 +1，且本局额外获得 4 次弃牌机会；若此前被亮出你的剑禁止弃牌，则重新允许弃牌，且不取消亮剑的点数和倍率加成。",
-      "巨人杀手：仅在选择回合和下一回合生效。按回合开始前与最高总分的差距 1~100/101~200/201~300/301~400/401 及以上，使手牌得分分别 x1.3/x1.45/x1.6/x1.75/x1.9；之后消失且本局不再进入该玩家特效池。",
-      "马太效应：本回合倍率 +2；从本回合开始，本局之后每次单回合得分最高时，额外获得 3 次弃牌机会。每位玩家每局只能选择一次。",
-      "暴击切牌：从本回合开始，本局之后所有回合暴击率 +25%；每当该玩家本回合计分时至少有一张牌触发暴击，额外获得 1 次弃牌机会。每位玩家每局只能选择一次。",
-      "直接来吧：结算时将该玩家当前剩余的未使用弃牌次数额外加到倍率上；如果选中后继续弃牌，最终倍率加成会随剩余次数减少。",
-      "红温火烤：如果在自己的回合开始后 15 秒内出牌，本回合总点数 +10 后再乘以倍率。"
-    ];
-  }
-  return [
-    "Suit chip boost: played cards of one suit each gain +4 chips.",
-    "Rank boost: played cards of one rank each gain +7 chips.",
-    "Red boost: played hearts and diamonds each gain +3 chips.",
-    "Pair engine: One Pair or Two Pair gains +2 multiplier.",
-    "Flush engine: Flush or Straight Flush gains +1.5 multiplier.",
-    "Void seal: from the selector onward, one suit loses 3 chips this round, not below 0. The selector's played cards of that suit avoid the penalty, gain +4 chips each instead, and add +1 multiplier if their five-card play contains that suit.",
-    "Pattern Reproduction: choose two hand cards in order; the first copies the second card's suit. This round gains +2.5 multiplier.",
-    "Shadow Swap: swap one hand card with one community card. The changed community board affects later players this round. This round gains +5 chips and +1 multiplier.",
-    "Void Erosion: remove one community card and deal a replacement. The changed community board affects later players this round. This round gains +5 chips and +1 multiplier.",
-    "World in Mirror: mirror all five community card ranks: A/K, Q/2, J/3, 10/4, 9/5, and 8/6 swap, while 7 stays unchanged. The changed board affects later players. This round gains +6 chips and +2 multiplier.",
-    "Man in Mirror: mirror all of your hand card ranks using the same mirror mapping as World in Mirror. This round gains +6 chips and +2 multiplier.",
-    "Draven's League: this round gains +3.5 multiplier. If you lead the round, you also gain 20% of the current highest total score after round settlement.",
-    "GOELIA: your hand cards become non-identical ranks from 8, 9, 10, J, Q, and K while keeping their suits.",
-    "Shadow Targeting: choose two hand cards and one unplayed target player; swap them with two random cards from that target. This round gains +1 multiplier and extra chips equal to the gained cards' chip values.",
-    "Chaos Dice: reroll every unplayed player's hand, including yours. The selector gains +1 multiplier and bonus chips equal to total rerolled hand cards x0.5.",
-    "King of the Tomato: count how many tomatoes other players hit you with earlier in this game, before the current round. This round gains that count as chips and +1 multiplier. Each player can choose it only once per game; after use, it leaves that player's later effect pools.",
-    "Tomato Shooter: count how many tomatoes you threw at other players earlier in this game, before the current round. This round gains that count as chips and +0.5 multiplier. Each player can choose it only once per game; after use, it leaves that player's later effect pools.",
-    "Straight Flush: when you play a Straight Flush, gain +1000 final score.",
-    "Change: Straight: if your played hand is a Straight, calculate its multiplier as a Straight Flush. Each player can choose it only once per game.",
-    "Protoceratops: this round gains +3 multiplier. Your effective tomato hit and throw counts become three times their raw values for the whole game, including counts from before selection. Once per game.",
-    "Bread and butter: from this round onward, your Straights gain +2 multiplier for the rest of this game. Once per game.",
-    "Bread and cheese: from this round onward, your Three of a Kind gains +3 multiplier for the rest of this game. Once per game.",
-    "Bread and Jam: from this round onward, your Two Pair gains +4 multiplier for the rest of this game. Once per game.",
-    "Astral Body: gain +1000 final score when selected; that bonus is not reduced. Only hand score is reduced to 70%/70%/60%/50% in rounds 1/2/3/4, with no penalty in round 5. Once per game.",
-    "Tempered Tomato: from this round onward, the threshold is checked continuously. If it is not active when selected, it activates in any later round once effective tomato hits exceed 30 or effective throws exceed 50, then each round adds hits x0.5 plus throws x0.2 chips, rounded to one decimal. Once per game.",
-    "Returning to the fundamentals: only appears in rounds 2/3. From this round onward, you cannot choose more effects. In rounds 2/3/4/5, gain +15/+20/+20/+22 chips and +1/+1.5/+1.5/+1.75 multiplier. Once per game.",
-    "Draw your sword: only appears in rounds 2/3. From this round onward, you cannot discard. In rounds 2/3/4/5, gain +10/+15/+15/+18 chips and +2/+2.5/+2.5/+2.75 multiplier. Once per game. Refresher Orb can re-enable discards without removing these bonuses.",
-    "Critical Hit: from this round onward, each played card has an independent 50% chance to crit. Critical cards multiply their chip value by 1.75. Previews show expected value; settlement rolls each card.",
-    "Infinity Edge: from this round onward, gain +25% additive crit chance and raise the crit multiplier to x2.25. Crit chance from crit effects stacks additively and caps at 100%. Once per game.",
-    "Brutal Force: this round gains +25 chips and +1 multiplier.",
-    "Vigorous: this round multiplies the chip total by x1.5 before applying hand multiplier.",
-    "Refresher Orb: this round gains +1 multiplier and you gain 4 extra discard uses this game. If Draw your sword blocked discards, discards are re-enabled without removing Draw your sword's scoring bonuses.",
-    "Giant Killer: active only this round and the next. A 1-100/101-200/201-300/301-400/401+ gap to the leader multiplies hand score by x1.3/x1.45/x1.6/x1.75/x1.9. It then expires and cannot return to your effect pool this game.",
-    "Matthew effect: this round gains +2 multiplier. From this round onward, each time you have the highest single-round score, gain 3 extra discard uses. Once per game.",
-    "Critical Switch Hand: from this round onward, gain +25% additive crit chance. Whenever at least one played card crits during your round scoring, gain 1 extra discard use. Once per game.",
-    "Bite me: at scoring time, add your remaining unused discard uses to this round's multiplier. If you keep discarding after choosing it, the final multiplier bonus drops with the remaining count.",
-    "Rambo: if you play within 15 seconds after your turn starts, gain +10 chips before multiplying."
-  ];
-}
-
-function battleBalanceRuleText() {
-  return battleCompleteRuleText();
-  if (isZh()) {
-    return [
-      "\u5e7b\u5f71\u4e4b\u821e\uff1a\u66b4\u51fb\u7387 +25%\uff0c\u653b\u51fb\u901f\u5ea6 +65%\uff0c\u5e76\u8fdb\u5165\u5e7d\u7075\u72b6\u6001\uff1a\u5411\u8be5\u73a9\u5bb6\u6295\u63b7\u756a\u8304\u65f6\uff0c\u547d\u4e2d\u4e0d\u8ba1\u5165\u6295\u63b7\u8005\u7684\u6295\u63b7\u6b21\u6570\uff0c\u4f46\u4f1a\u8ba1\u5165\u8be5\u73a9\u5bb6\u88ab\u6295\u63b7\u7684\u6b21\u6570\u3002\u6bcf\u5c40\u4e00\u6b21\u3002",
-      "基础计分：高牌只计入最高牌；一对只计入对子两张；两对只计入两对四张；三条只计入三张；四条只计入四张；顺子、同花、葫芦、同花顺计入全部五张。",
-      "未参与牌型的牌基础点数为 0，但同花色点数增强、点数增强、红色增幅、虚无封印拥有者加成等逐牌加点特效仍可让这些牌获得额外点数。",
-      "暴击只会在参与牌型计分的牌上判定；不参与牌型的牌即使通过特效获得额外点数，也不会因此触发暴击。",
-      "同花色点数增强：指定花色的已出牌每张 +4 点。",
-      "点数增强：指定点数的已出牌每张 +7 点。",
-      "红色增幅：已出的红桃和方块每张 +3 点。",
-      "对子引擎：牌型为一对或两对时，倍率 +2。",
-      "同花引擎：牌型为同花或同花顺时，倍率 +1.5。",
-      "虚无封印：从选择者开始，本回合之后顺序出牌玩家的指定花色点数 -3，最低 0；选择者自己的该花色牌改为每张 +4，并且只要打出的 5 张牌包含该花色，倍率 +1。",
-      "花色复制：按顺序选择两张自己的手牌，第一张复制第二张花色；本回合倍率 +2.5。",
-      "暗隐置换：选择一张手牌与一张公共牌交换；本回合点数 +5，倍率 +1。",
-      "虚空侵蚀：移除一张公共牌并补发；本回合点数 +5，倍率 +1。",
-      "镜中世界：将公共牌点数按 A/K、Q/2、J/3、10/4、9/5、8/6 互换，7 不变；本回合点数 +6，倍率 +2。",
-      "镜中人：将自己的手牌按同样规则互换点数；本回合点数 +6，倍率 +2。",
-      "德莱联盟：本回合倍率 +3.5；若本回合得分最高，结算后额外获得当前所有玩家最高总分的 20%。",
-      "歌莉娅：自己的手牌在不改变花色的前提下变为 8、9、10、J、Q、K 中不完全相同的点数。",
-      "虚空索敌：选择自己的两张手牌并指定一名尚未出牌的目标，与其随机两张手牌交换；本回合倍率 +1，并额外加上换得两张牌的点数和。",
-      "混沌骰子：将所有尚未出牌玩家的手牌重发；选择者本回合倍率 +1，并额外加上重发手牌总数 x0.5 点。",
-      "番茄大王：本回合倍率 +1；手牌按牌型倍率结算后，在最终分额外加上本局此前被其他玩家投掷番茄命中的次数 ×2。每局一次。",
-      "番茄射手：本回合倍率 +1；手牌按牌型倍率结算后，在最终分额外加上本局此前向其他玩家投掷番茄的次数 ×2。每局一次。",
-      "卢安娜的飓风：暴击率 +25%，攻击速度 +40%；每次投掷番茄额外发射 2 个不递归的分裂番茄至随机其他玩家，同一目标可重复。每局一次。",
-      "往日番茄：只在第 5 回合出现；本局此前番茄命中数 ×0.5 加入手牌点数后再乘牌型倍率。",
-      "多米尼克领主的致意：暴击率 +25%；从本回合起，高牌、一对、两对、三条、顺子的牌型倍率至少为 6。每局一次。",
-      "收集者：暴击率 +25%，本回合点数 +10；之后若上一回合得分最高，额外获得 2 次弃牌和其他玩家总投掷次数之和的 10%（取整）作为投掷计数。每局一次。",
-      "幻影之舞：暴击率 +25%，攻击速度 +65%，本回合点数 +5、倍率 +1.5；你的番茄只给自己增加命中计数，投向你的番茄不给对方投掷计数。每局一次。",
-      "同花大顺：打出同花顺时，最终分 +1000。",
-      "质变：顺子：若打出顺子，按同花顺倍率计算。每局一次。",
-      "双角龙：本回合倍率 +3；本局番茄命中和投掷有效计数变为 3 倍，包括选择前已有计数。每局一次。",
-      "面包和奶酪：本局之后所有三条牌型倍率 +1，基础点数 +12。每局一次。",
-      "面包和黄油：本局之后所有两对牌型倍率 +2，基础点数 +5。每局一次。",
-      "面包和果酱：本局之后所有顺子牌型倍率 +2，基础点数 +3。每局一次。",
-      "星界身体：本回合最终分 +1000；从本回合开始，本局之后每回合最终得分降低至 50%。每局一次。",
-      "钢化番茄：从本回合开始持续判定；若有效命中次数超过 30 或有效投掷次数超过 50，每回合在手牌结算后额外加入（命中×0.5 + 投掷×0.2）×0.75。每局一次。",
-      "回归基本功：只在第 2/3 回合出现；之后不能再选特效，立即额外获得 4 次弃牌；第 2/3/4/5 回合均获得 +18 点数，倍率为 +1.5/+1.5/+1.5/+1.75。每局一次。",
-      "亮出你的剑：只在第 2/3 回合出现；之后不能再弃牌；第 2/3/4/5 回合均获得 +15 点数和 +2.25 倍率。刷新球可重新允许弃牌但保留亮剑加成。每局一次。",
-      "关键暴击：从本回合开始，参与牌型计分的牌有 50% 几率暴击，暴击点数 x1.75。每局一次。",
-      "无尽之刃：从本回合开始，参与牌型计分的牌暴击率 +25%，暴击倍率提高到 x2.25。每局一次。",
-      "暴击切牌：从本回合开始，参与牌型计分的牌暴击率 +25%；每回合若至少一张计分牌触发暴击，额外获得 1 次弃牌。每局一次。",
-      "残暴之力：本回合点数 +25，倍率 +1。",
-      "大力：本回合计分点数之和 x1.5 后再乘以牌型倍率。",
-      "刷新球：本回合倍率 +1，并额外获得 4 次弃牌；若此前被亮剑禁止弃牌，则重新允许弃牌。",
-      "巨人杀手：仅在选择回合和下一回合生效，按回合开始前与最高总分的差距提升得分：x1.3/x1.45/x1.6/x1.75/x1.9；之后消失且本局不再出现。",
-      "马太效应：本回合倍率 +2；之后每次单回合得分最高时，额外获得 3 次弃牌。每局一次。",
-      "直接来吧：结算时将当前剩余未使用弃牌次数额外加到倍率上。",
-      "红温火烤：如果在自己的回合开始后 15 秒内出牌，本回合点数 +10 后再乘以倍率。"
-    ];
-  }
-  return [
-    "Base scoring: High Card scores only the highest card; One Pair scores the pair; Two Pair scores both pairs; Three/Four of a Kind score only the matching cards; Straight, Flush, Full House, and Straight Flush score all five cards.",
-    "Cards outside the made hand have 0 base chips, but per-card chip effects such as suit boost, rank boost, red boost, and the Void Seal owner bonus can still add chips to them.",
-    "Crits are checked only on cards that participate in the scored hand. Non-scoring cards do not crit even if an effect gives them bonus chips.",
-    "Suit chip boost: played cards of one suit each gain +4 chips.",
-    "Rank boost: played cards of one rank each gain +7 chips.",
-    "Red boost: played hearts and diamonds each gain +3 chips.",
-    "Pair engine: One Pair or Two Pair gains +2 multiplier.",
-    "Flush engine: Flush or Straight Flush gains +1.5 multiplier.",
-    "Void seal: from the selector onward, one suit loses 3 chips this round, not below 0. The selector's played cards of that suit gain +4 chips instead, and add +1 multiplier if the five-card play contains that suit.",
-    "Pattern Reproduction: choose two hand cards in order; the first copies the second card's suit. This round gains +2.5 multiplier.",
-    "Shadow Swap: swap one hand card with one community card. This round gains +5 chips and +1 multiplier.",
-    "Void Erosion: remove one community card and deal a replacement. This round gains +5 chips and +1 multiplier.",
-    "World in Mirror: mirror all five community card ranks. This round gains +6 chips and +2 multiplier.",
-    "Man in Mirror: mirror all of your hand card ranks. This round gains +6 chips and +2 multiplier.",
-    "Draven's League: this round gains +3.5 multiplier. If you lead the round, gain 20% of the current highest total score after settlement.",
-    "GOELIA: your hand cards become non-identical ranks from 8, 9, 10, J, Q, and K while keeping suits.",
-    "Shadow Targeting: swap two hand cards with two random cards from an unplayed target. This round gains +1 multiplier and extra chips equal to the gained cards' chip values.",
-    "Chaos Dice: reroll every unplayed player's hand. The selector gains +1 multiplier and bonus chips equal to total rerolled hand cards x0.5.",
-    "King of the Tomato: this round gains +1 multiplier; after hand scoring, earlier tomato hits against you this game add hits x2 to final score. Once per game.",
-    "Tomato Shooter: this round gains +1 multiplier; after hand scoring, earlier tomatoes you threw this game add throws x2 to final score. Once per game.",
-    "Runaan's Hurricane: gain +25% crit chance and +40% attack speed. Each tomato fires two non-recursive split tomatoes at random other players; the same target may be hit twice. Once per game.",
-    "Old days' Tomatoes: only appears in round 5. Earlier tomato hits this game add hits x0.5 before hand multiplier.",
-    "Lord Dominick's Regards: gain +25% crit chance. From this round onward, High Card through Straight use at least x6 hand multiplier. Once per game.",
-    "The Collector: gain +25% crit chance and +10 chips this round. After any previous-round win, gain 2 discards and 10% of all other players' total throws, floored, as bonus throw count. Once per game.",
-    "Dance of Illusions: gain +25% crit chance, +65% attack speed, +5 chips and +1.5 multiplier this round. Your tomatoes add hit count only to you; tomatoes thrown at you give the thrower no throw count. Once per game.",
-    "Straight Flush: when you play a Straight Flush, gain +1000 final score.",
-    "Change: Straight: if your played hand is a Straight, calculate its multiplier as a Straight Flush. Once per game.",
-    "Protoceratops: this round gains +3 multiplier. Your effective tomato hit and throw counts become three times their raw values for the whole game. Once per game.",
-    "Bread and cheese: for the rest of this game, your Three of a Kind gains +1 multiplier and +12 chips. Once per game.",
-    "Bread and butter: for the rest of this game, your Two Pair gains +2 multiplier and +5 chips. Once per game.",
-    "Bread and Jam: for the rest of this game, your Straights gain +2 multiplier and +3 chips. Once per game.",
-    "Astral Body: gain +1000 final score outside its penalty; only hand score is reduced in rounds 1-4, and round 5 has no penalty. Once per game.",
-    "Tempered Tomato: from this round onward, thresholds are checked continuously. Once effective hits exceed 30 or throws exceed 50, each round adds (hits x0.5 + throws x0.2) x0.75 to final score after hand scoring. Once per game.",
-    "Returning to the fundamentals: only appears in rounds 2/3. You cannot choose more effects and immediately gain 4 discard uses. Rounds 2/3/4/5 gain +18 chips and +1.5/+1.5/+1.5/+1.75 multiplier. Once per game.",
-    "Draw your sword: only appears in rounds 2/3. You cannot discard. Rounds 2/3/4/5 each gain +15 chips and +2.25 multiplier. Once per game. Refresher Orb can re-enable discards without removing these bonuses.",
-    "Critical Hit: from this round onward, scoring-hand cards have 50% crit chance for x1.75 chips. Once per game.",
-    "Infinity Edge: from this round onward, scoring-hand cards gain +25% crit chance and the crit multiplier rises to x2.25. Once per game.",
-    "Critical Switch Hand: from this round onward, scoring-hand cards gain +25% crit chance; any scoring-card crit in a round grants 1 extra discard. Once per game.",
-    "Dance of Illusions: gain +25% crit chance and +65% attack speed. Tomatoes thrown at this ghosted player still count as hits against them, but do not count as throws for the thrower. Once per game.",
-    "Brutal Force: this round gains +25 chips and +1 multiplier.",
-    "Vigorous: this round multiplies the chip total by x1.5 before applying hand multiplier.",
-    "Refresher Orb: this round gains +1 multiplier and 4 extra discard uses. If Draw your sword blocked discards, discards are re-enabled without removing Draw your sword's scoring bonuses.",
-    "Giant Killer: this round and the next, multiply hand score by x1.3/x1.45/x1.6/x1.75/x1.9 based on the gap to the leader. It then expires and cannot be selected again this game.",
-    "Matthew effect: this round gains +2 multiplier. Later round wins grant 3 extra discard uses. Once per game.",
-    "Bite me: at scoring time, add your remaining unused discard uses to this round's multiplier.",
-    "Rambo: if you play within 15 seconds after your turn starts, gain +10 chips before multiplying."
-  ];
-}
-
-function battleCompleteRuleText() {
-  const baseRules = isZh()
-    ? [
-      "基础计分：高牌仅计最高牌；一对仅计对子；两对仅计两对；三条与四条仅计同点数牌；顺子、同花、葫芦、同花顺计全部五张。",
-      "踢脚牌：未参与牌型的牌按自身点数 40%（向下取整）加入点数，合计最高 20；这些点数也可触发暴击。",
-      "暴击：每张计分牌与有踢脚牌贡献的牌独立判定；仅当本回合暴击率大于 0% 且没有任何暴击时，最终得分额外 +100。",
-      "皇家同花顺：每局随机选定一种胜利花色并显示在回合数旁；只有对应花色的 10、J、Q、K、A 同花顺会立即赢得整局，另外三种花色按普通同花顺计分。",
-      "番茄投掷：积分对战中只能在其他玩家的出牌回合投掷番茄；自己的回合及回合结算阶段不能投掷。",
-      "最终得分在完整计算后向下取整为整数。"
-    ]
-    : [
-      "Base scoring: High Card scores only its highest card; One Pair, Two Pair, Three/Four of a Kind score only their made cards; Straight, Flush, Full House, and Straight Flush score all five.",
-      "Kickers: cards outside the made hand add 40% of their chip value, rounded down, up to 20 total. Those contributions may crit.",
-      "Crits: scoring cards and contributing kickers roll independently. Only a round with crit chance above 0% and no crit adds +100 final score.",
-      "Royal Flush: one winning suit is chosen each game and shown beside the round counter. Only that suit wins instantly with 10-J-Q-K-A; the other three score as a normal Straight Flush.",
-      "Tomato throws: in Score Battle, tomatoes can be thrown only during another player's active turn, not during your own turn or round settlement.",
-      "Final scores are floored to integers after the full calculation."
-    ];
-  return baseRules.concat(battleRuleEffectSamples().map((effect) => `${battleEffectName(effect)}: ${battleEffectDescription(effect)}`));
+  return battleRuleEffectSamples().map((effect) => `${battleEffectName(effect)}: ${battleEffectDescription(effect)}`);
 }
 
 function battleRuleEffectSamples() {
@@ -2031,7 +2046,7 @@ function battleRuleEffectSamples() {
     { kind: "void-suit", suit: "H", amount: 3 }, { kind: "pattern-reproduction" }, { kind: "shadow-swap" }, { kind: "void-erosion", followingUnplayedPlayers: 2 },
     { kind: "world-mirror" }, { kind: "man-mirror" }, { kind: "draven" }, { kind: "goelia" }, { kind: "shadow-targeting", gainedChipBonus: 0 },
     { kind: "chaos-dice", rerolledCardCount: 0 }, { kind: "rambo", amount: 10, seconds: 20 }, { kind: "tomato-king", tomatoHits: 0 },
-    { kind: "tomato-shooter", tomatoThrows: 0 }, { kind: "runaans-hurricane" }, { kind: "old-days-tomatoes", tomatoThrows: 0 },
+    { kind: "tomato-shooter", tomatoThrows: 0 }, { kind: "runaans-hurricane" }, { kind: "old-days-tomatoes", tomatoThrows: 0, tomatoHits: 0 },
     { kind: "lord-dominicks-regards" }, { kind: "collector" }, { kind: "bite-me", discardMultiplier: 0 }, { kind: "straight-flush-boost" },
     { kind: "change-straight" }, { kind: "protoceratops" }, { kind: "bread-butter" }, { kind: "bread-cheese" }, { kind: "bread-jam" },
     { kind: "astral-body" }, { kind: "tempered-tomato" }, { kind: "returning-fundamentals" }, { kind: "draw-sword" },
@@ -2264,6 +2279,11 @@ function renderTopbar(withUser) {
       el("button", {
         className: "ghost",
         type: "button",
+        onclick: openPlayerList
+      }, [t("Player list")]),
+      el("button", {
+        className: "ghost",
+        type: "button",
         onclick: async () => {
           state.showProfile = !state.showProfile;
           if (state.showProfile) await refreshProfile(false);
@@ -2293,6 +2313,7 @@ function renderProfilePanel() {
     history: []
   };
   const stats = profile.stats || {};
+  const scoreBattleStats = profile.scoreBattle || {};
   const history = Array.isArray(profile.history) ? profile.history : [];
 
   return el("section", { className: "profile-panel" }, [
@@ -2332,6 +2353,15 @@ function renderProfilePanel() {
       statTile(t("Best stars"), starText(stats.bestStars) || "0"),
       statTile(t("Latest points"), stats.lastPoints ?? 0),
       statTile(t("Latest stars"), starText(stats.lastStars) || "0")
+    ]),
+    el("div", { className: "profile-section-head" }, [
+      el("h3", {}, [t("Score Battle statistics")])
+    ]),
+    el("div", { className: "profile-stats score-career-stats" }, [
+      statTile(t("Score Battle games"), scoreBattleStats.games ?? 0),
+      statTile(t("Score Battle wins"), scoreBattleStats.wins ?? 0),
+      statTile(t("Score Battle win rate"), formatWinRate(scoreBattleStats.winRate)),
+      statTile(t("Favorite FATE"), formatFavoriteFate(scoreBattleStats.favoriteFate))
     ]),
     el("div", { className: "profile-section-head" }, [
       el("h3", {}, [t("History")])
@@ -2817,7 +2847,8 @@ function renderScoreTable(table) {
     el("div", { className: "center-board score-center-board" }, [
       el("div", { className: "score-title" }, [
         el("span", { className: "score-title-text" }, [title]),
-        renderRoyalVictorySuits(table)
+        renderRoyalVictorySuits(table),
+        renderBatemanWarning(table)
       ]),
       el("div", { className: "score-community-area" }, [
         community,
@@ -2829,6 +2860,16 @@ function renderScoreTable(table) {
     renderRoyalVictoryOverlay(table)
   );
   return felt;
+}
+
+function renderBatemanWarning(table) {
+  if (!table.americanPsychoPresent || table.phase === "waiting") return "";
+  return el("span", {
+    className: "bateman-warning",
+    title: isZh()
+      ? "\u672c\u5c40\u5b58\u5728\u7f8e\u56fd\u7cbe\u795e\u75c5\u4eba\uff0c\u4f46\u4ed6\u7684\u8eab\u4efd\u4ecd\u7136\u9690\u85cf\u3002"
+      : "American Psycho is present, but their identity remains hidden."
+  }, [t("Watch out for Bateman")]);
 }
 
 function renderRoyalVictorySuits(table) {
@@ -2848,7 +2889,7 @@ function renderScoreFateOverlay(table) {
     el("section", { className: "fate-choice-panel" }, [
       el("div", { className: "fate-choice-head" }, [
         el("span", { className: "fate-label" }, ["FATE"]),
-        el("h2", { id: "fate-title" }, [t("Choose one of two FATE cards")]),
+        el("h2", { id: "fate-title" }, [t("Choose one of three FATE cards")]),
         el("p", {}, [t("FATE is required in round 1.")])
       ]),
       el("div", { className: "fate-choice-grid" }, (you.fateOptions || []).map((fate) => el("button", {
@@ -2877,6 +2918,94 @@ function renderScoreRoundEffects(table) {
       ? `${battleSuitName(effect.suit)} ${t("Sealed")}`
       : `${battleEffectName(effect)}: ${battleEffectDescription(effect)}`
   ])));
+}
+
+function formatWinRate(value) {
+  const number = Number(value);
+  return `${Number.isFinite(number) ? number : 0}%`;
+}
+
+function formatFavoriteFate(favoriteFate) {
+  if (!favoriteFate?.kind) return t("No FATE data yet.");
+  const count = Math.max(0, Number(favoriteFate.count) || 0);
+  return `${scoreFateTitle(favoriteFate.kind)} (${count})`;
+}
+
+async function openPlayerList() {
+  state.showPlayerList = true;
+  state.playersLoading = true;
+  render();
+  await refreshPlayers(true);
+  state.playersLoading = false;
+  render();
+}
+
+function closePlayerList() {
+  state.showPlayerList = false;
+  state.playerListScroll = 0;
+  render();
+}
+
+function appendPlayerListModal() {
+  if (!state.user || !state.showPlayerList) return;
+  const rows = state.playersLoading
+    ? el("div", { className: "empty-state" }, [t("Loading players...")])
+    : state.players.length
+      ? el("div", {
+        className: "player-list-rows",
+        onscroll: (event) => {
+          state.playerListScroll = event.currentTarget.scrollTop;
+        }
+      }, state.players.map(renderPlayerListRow))
+      : el("div", { className: "empty-state" }, [t("No registered players.")]);
+  const modal = el("section", {
+    className: "update-modal player-list-modal",
+    role: "dialog",
+    "aria-modal": "true",
+    "aria-labelledby": "player-list-title"
+  }, [
+    el("div", { className: "modal-head" }, [
+      el("div", {}, [
+        el("span", { className: "pill" }, [t("Registered players")]),
+        el("h2", { id: "player-list-title" }, [t("Player list")])
+      ]),
+      el("button", {
+        className: "ghost modal-close",
+        type: "button",
+        onclick: closePlayerList,
+        "aria-label": t("Close")
+      }, ["x"])
+    ]),
+    rows
+  ]);
+  app.appendChild(el("div", { className: "modal-backdrop", role: "presentation" }, [modal]));
+  requestAnimationFrame(() => {
+    const list = modal.querySelector(".player-list-rows");
+    if (list) list.scrollTop = state.playerListScroll || 0;
+  });
+}
+
+function renderPlayerListRow(player) {
+  const scoreBattleStats = player.scoreBattle || {};
+  return el("div", { className: "player-list-row" }, [
+    el("div", { className: "player-list-identity" }, [
+      avatarNode(player.avatar, player.username, "player-list-avatar"),
+      el("div", {}, [
+        el("strong", {}, [player.username || t("Player ID")]),
+        el("span", {}, [t("Player ID")])
+      ])
+    ]),
+    el("div", { className: "player-list-stats" }, [
+      el("span", {}, [
+        el("small", {}, [t("Games")]),
+        el("strong", {}, [String(scoreBattleStats.games ?? 0)])
+      ]),
+      el("span", {}, [
+        el("small", {}, [t("Win rate")]),
+        el("strong", {}, [formatWinRate(scoreBattleStats.winRate)])
+      ])
+    ])
+  ]);
 }
 
 function renderRoyalVictoryOverlay(table) {
@@ -2977,6 +3106,9 @@ function renderScoreSeat(seat, index) {
   if (seat.kind === "bot") badges.appendChild(el("span", { className: "badge" }, [t("CPU")]));
   if (seat.isYou) badges.appendChild(el("span", { className: "badge" }, [t("You")]));
   if (seat.isScoreTurn) badges.appendChild(el("span", { className: "badge gold" }, [t("Score turn")]));
+  if (seat.weaknessActive) {
+    badges.appendChild(el("span", { className: "badge score-weakness-badge" }, [isZh() ? "虚弱" : "Weakened"]));
+  }
   if (seat.isScoreTurn && state.scoreTable?.phase === "play-select") {
     badges.appendChild(el("span", { className: "badge score-clock-badge" }, [
       el("span", {}, [t("Countdown")]),
@@ -3020,6 +3152,7 @@ function renderScoreSeat(seat, index) {
   const persistentEffects = renderScorePersistentEffects(seat);
   const scorePreview = seat.isYou ? renderScorePreview() : "";
   const result = renderScoreSeatResult(seat);
+  const personaReveal = renderScorePersonaReveal(seat);
   const giantDeductionRound = Math.max(0, Number(seat.lastGiantDeductionRound) || 0);
   const giantDeduction = giantDeductionRound
     ? el("div", { className: "score-giant-deduction-line" }, [
@@ -3053,7 +3186,22 @@ function renderScoreSeat(seat, index) {
     persistentEffects,
     actions,
     result,
+    personaReveal,
     hand
+  ]);
+}
+
+function renderScorePersonaReveal(seat) {
+  const card = seat.personaVisibleCard;
+  if (!card) return "";
+  return el("div", { className: "persona-reveal" }, [
+    el("span", { className: "persona-reveal-label" }, [
+      isZh() ? `Persona 可借用：${seat.displayName}` : `Persona reveal: ${seat.displayName}`
+    ]),
+    renderBattleCard(card, "persona", state.scoreTable, {
+      selectionCode: card.token,
+      extraClass: "persona-reveal-card"
+    })
   ]);
 }
 
@@ -3088,29 +3236,52 @@ function renderScoreFateLine(seat) {
   if (!fate) return "";
   const details = [];
   let collection = "";
-  if (fate.kind === "dice") {
+  if (!fate.disguised && fate.kind === "dice") {
     details.push(`x${fate.diceValue || "-"}`);
     details.push(`${t("Dice")} ${fate.diceCount || 1}`);
-    details.push(`${t("Misfortune")} ${fate.misfortune || 0}/3`);
+    details.push(`${t("Misfortune")} ${fate.misfortune || 0}`);
   }
-  if (["big-short", "going-long"].includes(fate.kind)) {
+  if (!fate.disguised && ["big-short", "going-long"].includes(fate.kind)) {
     if (fate.targetName) details.push(`${t("Target")}: ${fate.targetName}`);
     const successLabel = fate.kind === "big-short" ? t("Short successes") : t("Long successes");
     details.push(`${successLabel} ${fate.predictionSuccessCount || 0}`);
   }
-  if (fate.kind === "fate-collector") {
+  if (!fate.disguised && fate.kind === "fate-collector") {
     const collectedHandIds = Array.isArray(fate.collectedHandIds) ? fate.collectedHandIds : [];
     details.push(`${t("Collected hands")} ${fate.collectedHandCount || 0}/5`);
     collection = el("span", { className: "score-fate-collection" }, collectedHandIds.length
       ? collectedHandIds.map((handId) => el("span", { className: "score-fate-collection-item" }, [translateBattleHandId(handId)]))
       : [t("None yet")]);
   }
-  if (fate.kind === "giant") {
+  if (!fate.disguised && fate.kind === "giant") {
     if (fate.giantDefenseActive) details.push(`${t("Defense active")} ${Math.round((Number(fate.giantDefenseReduction) || 0) * 100)}%`);
     else if (fate.giantDefenseUsed) details.push(t("Defense used"));
     if (fate.lastGiantPenalty) details.push(`-${fate.lastGiantPenalty}`);
     details.push(`${t("Damage dealt")} ${fate.damageDealt || 0}`);
   }
+  if (!fate.disguised && fate.kind === "persona") {
+    details.push(`${isZh() ? "本回合可借" : "Borrow limit"} ${fate.personaBorrowLimit || 0}`);
+  }
+  if (!fate.disguised && fate.kind === "american-psycho" && fate.americanPsychoBonus) {
+    const bonus = fate.americanPsychoBonus;
+    const isCurrentBonus = Number(fate.americanPsychoBonusRound) === Number(state.scoreTable?.round);
+    const roundLabel = isCurrentBonus
+      ? (isZh() ? "\u672c\u56de\u5408" : "This round")
+      : (isZh() ? `\u7b2c ${fate.americanPsychoBonusRound} \u56de\u5408` : `Round ${fate.americanPsychoBonusRound}`);
+    details.push(`${roundLabel}: +${bonus.chips || 0} ${isZh() ? "\u70b9" : "chips"}, +${bonus.multiplier || 0}x`);
+    details.push(`n=${bonus.higherTotalCount || 0}, m=${bonus.higherRoundCount || 0}`);
+  }
+  if (!fate.disguised && fate.kind === "american-psycho") {
+    details.push(`${t("Assassinations used")} ${fate.assassinationUses || 0}/${fate.assassinationLimit || 2}`);
+    if (fate.assassinationTargetName) details.push(`${t("Assassination")}: ${fate.assassinationTargetName}`);
+  }
+  const assassinationProgress = !fate.disguised && fate.kind === "american-psycho"
+    ? el("span", { className: "score-fate-collection" }, (fate.assassinationProgress || []).map((target) => el("span", {
+      className: `score-fate-collection-item ${target.used ? "is-used" : ""}`.trim()
+    }, [isZh()
+      ? `${target.name}\uff1a${target.rounds || 0}/3${target.escaped ? "\uff08\u5df2\u9003\u8131\uff09" : target.used ? "\uff08\u5df2\u523a\u6740\uff09" : ""}`
+      : `${target.name}: ${target.rounds || 0}/3${target.escaped ? " (escaped)" : target.used ? " (assassinated)" : ""}`])))
+    : "";
   const defenseButton = fate.kind === "giant" && seat.isYou && seat.canUseGiantDefense && !fate.giantDefenseUsed
     ? el("button", {
       className: "giant-defense-button giant-defense-inline-button",
@@ -3122,15 +3293,34 @@ function renderScoreFateLine(seat) {
       }
     }, [t("Use Defense Stance")])
     : "";
+  const escape = seat.americanPsychoEscape;
+  const escapeButton = seat.isYou && escape
+    ? el("button", {
+      className: `american-psycho-escape-button ${escape.active ? "is-selected" : ""}`.trim(),
+      type: "button",
+      disabled: !escape.canToggle || state.battleFateBusy,
+      title: isZh()
+        ? "\u672c\u5c40\u53ea\u80fd\u4f7f\u7528\u4e00\u6b21\u3002\u5728\u56de\u5408\u7ed3\u7b97\u524d\u518d\u70b9\u4e00\u6b21\u53ef\u53d6\u6d88\u3002"
+        : "Once per game. Click again before round settlement to cancel.",
+      onclick: (event) => {
+        event.stopPropagation();
+        toggleBattleAmericanPsychoEscape();
+      }
+    }, [`${t("Run Away")} ${escape.usedCount || 0}/${escape.limit || 1}`])
+    : "";
+  const inlineActions = defenseButton || escapeButton
+    ? el("span", { className: "score-fate-inline-actions" }, [defenseButton, escapeButton])
+    : "";
   return el("div", {
-    className: `score-fate-line ${defenseButton ? "has-defense-action" : ""}`.trim(),
+    className: `score-fate-line ${inlineActions ? "has-inline-action" : ""}`.trim(),
     title: scoreFateDescription(fate)
   }, [
     el("span", { className: "fate-label compact" }, ["FATE"]),
     el("strong", {}, [scoreFateName(fate)]),
     details.length ? el("span", {}, [details.join(" | ")]) : "",
     collection,
-    defenseButton
+    assassinationProgress,
+    inlineActions
   ]);
 }
 
@@ -3155,7 +3345,7 @@ function renderScorePersistentEffects(seat) {
   const critChance = Number(profile.chance) || 0;
   const critMultiplier = Number(profile.multiplier) || 1;
   const attackProfile = seat.attackSpeedProfile || {};
-  const attackSpeed = Number(attackProfile.speed) || 1;
+  const attackSpeed = Number(attackProfile.speed) || 0.5;
   return el("div", { className: `persistent-effect-line ${effects.length ? "" : "is-empty"}` }, [
     el("span", { className: "persistent-effect-pill crit-rate-pill" }, [
       `${t("Crit rate")} ${formatPercent(critChance)}${critChance > 0 ? ` x${formatCompactNumber(critMultiplier)}` : ""}`
@@ -3228,7 +3418,7 @@ function renderScoreFateControls(seat, table) {
     return el("div", { className: "fate-turn-controls" }, [
       el("div", { className: "fate-dice-status" }, [
         el("strong", {}, [`${scoreFateName(fate)}: x${fate.diceValue || "-"}`]),
-        el("span", {}, [`${t("Rolls left")}: ${fate.diceRollsLeft || 0} | ${t("Misfortune")}: ${fate.misfortune || 0}/3 | ${rolls}`])
+        el("span", {}, [`${t("Rolls left")}: ${fate.diceRollsLeft || 0} | ${t("Misfortune")}: ${fate.misfortune || 0} | ${rolls}`])
       ]),
       el("button", {
         className: "fate-roll-button",
@@ -3250,6 +3440,18 @@ function renderScoreFateControls(seat, table) {
         disabled: state.battleFateBusy,
         onclick: () => chooseBattleFateTarget(target.seatId)
       }, [`${target.displayName}${target.isYou ? ` (${t("You")})` : ""}`])))
+    ]);
+  }
+  if (fate.kind === "american-psycho" && seat.canChooseAmericanPsychoAssassination) {
+    const targets = Array.isArray(fate.assassinationEligibleTargets) ? fate.assassinationEligibleTargets : [];
+    return el("div", { className: "fate-turn-controls fate-target-controls" }, [
+      el("strong", {}, [t("Choose assassination target")]),
+      el("div", { className: "fate-target-grid" }, targets.map((target) => el("button", {
+        className: fate.assassinationTargetSeatId === target.seatId ? "is-selected" : "secondary",
+        type: "button",
+        disabled: state.battleFateBusy,
+        onclick: () => chooseBattleAmericanPsychoAssassinationTarget(target.seatId)
+      }, [target.name])))
     ]);
   }
   return "";
@@ -3289,10 +3491,15 @@ function renderScoreResultCards(result) {
 
 function renderBattleCard(card, source, table, options = {}) {
   const you = table.seats.find((seat) => seat.isYou);
-  const interactive = Boolean(you && you.inGame && you.isScoreTurn && !you.submitted && table.phase === "play-select");
+  const personaSelectable = source === "persona" && you?.fate?.kind === "persona";
+  const interactive = Boolean(
+    you && you.inGame && you.isScoreTurn && !you.submitted && table.phase === "play-select"
+    && (source !== "persona" || personaSelectable)
+  );
+  const selectionCode = options.selectionCode || card.code;
   const selected = state.battleEffectTarget
     ? state.battleEffectTarget.cardTargets.some((entry) => entry.code === card.code)
-    : state.battleSelections.includes(card.code);
+    : state.battleSelections.includes(selectionCode);
   const communityPlayed = card.source === "community";
   const nonScoring = source === "result" && card.scoresHand === false;
   const classes = [
@@ -3301,29 +3508,41 @@ function renderBattleCard(card, source, table, options = {}) {
     state.battleEffectTarget ? "is-effect-target-mode" : "",
     communityPlayed ? "is-community-played" : "",
     nonScoring ? "is-non-scoring-card" : "",
+    card.personaWeakened ? "is-persona-weakened" : "",
     options.extraClass || ""
   ].filter(Boolean).join(" ");
   const props = { className: classes };
   const secondDeckTag = Number(card.deckNumber) >= 2
     ? el("span", { className: "second-deck-tag" }, [t("Second deck")])
     : "";
+  const personaWeakenedTag = card.personaWeakened
+    ? el("span", { className: "persona-weakened-tag" }, [isZh() ? "点数减半" : "Half chips"])
+    : "";
   if (options.style) props.style = options.style;
-  if (nonScoring) props.title = t("Not part of scoring hand");
+  const titleParts = [
+    nonScoring ? t("Not part of scoring hand") : "",
+    card.personaWeakened
+      ? (isZh() ? "该牌已被 Persona 复制，打出时基础计分点数减半。" : "Persona copied this card; its base chips are halved when played.")
+      : ""
+  ].filter(Boolean);
+  if (titleParts.length) props.title = titleParts.join(" ");
   if (!interactive || source === "result" || card.code === "BACK") {
     return el("div", props, [
       cardImage(card),
       communityPlayed ? el("span", { className: "community-tag" }, [t("Community card")]) : "",
       nonScoring ? el("span", { className: "non-scoring-tag" }, [t("Bonus only")]) : "",
-      secondDeckTag
+      secondDeckTag,
+      personaWeakenedTag
     ]);
   }
   return el("button", {
     className: classes,
     type: "button",
     "aria-pressed": selected ? "true" : "false",
+    title: props.title || "",
     style: options.style || "",
-    onclick: () => toggleBattleCard(card.code, source)
-  }, [cardImage(card), secondDeckTag]);
+    onclick: () => toggleBattleCard(selectionCode, source)
+  }, [cardImage(card), secondDeckTag, personaWeakenedTag]);
 }
 
 function renderScoreSidePanel(table) {
@@ -3632,14 +3851,20 @@ function toggleBattleCard(code, source) {
   if (!state.scoreTable) return;
   const you = state.scoreTable.seats.find((seat) => seat.isYou);
   if (!you || !you.inGame || !you.isScoreTurn || you.submitted || state.scoreTable.phase !== "play-select") return;
-  if (!["hand", "community"].includes(source)) return;
+  if (!["hand", "community", "persona"].includes(source)) return;
+  if (source === "persona" && you.fate?.kind !== "persona") return;
   if (state.battleEffectTarget) {
+    if (source === "persona") return;
     toggleBattleEffectTargetCard(code, source);
     return;
   }
   const index = state.battleSelections.indexOf(code);
   if (index >= 0) state.battleSelections.splice(index, 1);
   else {
+    if (source === "persona") {
+      const borrowed = state.battleSelections.filter((entry) => entry.startsWith("PERSONA:")).length;
+      if (borrowed >= (Number(you.fate?.personaBorrowLimit) || 0)) return;
+    }
     const maxSelectable = Math.max(5, (you.hand || []).length);
     if (state.battleSelections.length >= maxSelectable) return;
     state.battleSelections.push(code);
@@ -3776,7 +4001,10 @@ function scoreFateName(fate) {
     "big-short": isZh() ? "大空头" : "The Big Short",
     "going-long": isZh() ? "做多" : "Going Long",
     "fate-collector": isZh() ? "收藏家" : "The Collector",
-    clod: isZh() ? "土块" : "The Clod"
+    clod: isZh() ? "土块" : "The Clod",
+    "hanged-man": isZh() ? "倒吊人" : "The Hanged Man",
+    persona: "Persona",
+    "american-psycho": isZh() ? "美国精神病人" : "American Psycho"
   };
   return names[fate?.kind] || fate?.name || "FATE";
 }
@@ -3784,21 +4012,34 @@ function scoreFateName(fate) {
 function scoreFateDescription(fate) {
   const kind = fate?.kind;
   const descriptions = isZh() ? {
-    giant: "\u5f00\u5c40\u83b7\u5f97 3300 \u603b\u5206\u548c 8 \u6b21\u5f03\u724c\uff1b\u7b2c 2-5 \u56de\u5408\u4e0d\u80fd\u9009\u666e\u901a\u7279\u6548\u3002\u6bcf\u56de\u5408\u5de8\u4eba\u5148\u627f\u53d7 max(\u5de8\u4eba\u5916\u5176\u4ed6\u73a9\u5bb6\u6700\u4f4e\u56de\u5408\u5206x1.3, \u5de8\u4eba\u5916\u5176\u4ed6\u73a9\u5bb6\u6700\u9ad8\u56de\u5408\u5206x50%) \u603b\u5206\u6263\u9664\uff1b\u968f\u540e AOE \u4f7f\u9664\u5de8\u4eba\u5916\u6240\u6709\u73a9\u5bb6\u6263\u9664\u5de8\u4eba\u672c\u56de\u5408\u624b\u724c\u88f8\u5206\u7684 20%\uff0c\u56de\u5408\u5206\u4f4e\u4e8e\u5de8\u4eba\u624b\u724c\u88f8\u5206\u7684\u6240\u6709\u975e\u5de8\u4eba\u73a9\u5bb6\u518d\u53d7\u5230\u731b\u51fb\uff0c\u989d\u5916\u6263\u9664\u8be5\u88f8\u5206\u7684 20%\u3002\u7b2c 1-5 \u56de\u5408\u53ef\u5728\u51fa\u724c\u524d\u4f7f\u7528\u4e00\u6b21\u9632\u5fa1\u59ff\u6001\uff0c\u5206\u522b\u51cf\u514d\u5f53\u56de\u5408\u5de8\u4eba\u8d1f\u62c5\u7684 80%/70%/60%/50%/40%\u3002\u6bcf\u5c40\u6700\u591a\u4e00\u4f4d\u5de8\u4eba\u3002",
-    dice: "\u5f00\u5c40\u5f03\u724c\u6b21\u6570\u6539\u4e3a 6\u3002\u6bcf\u56de\u5408\u7684\u6700\u7ec8\u500d\u7387\u53d6 max(\u6700\u5927\u9ab0\u5b50\u70b9\u6570 + \u6240\u6709\u5df2\u751f\u6548\u7279\u6548\u7684\u500d\u7387\u52a0\u6210, \u724c\u578b\u57fa\u7840\u500d\u7387 + \u6240\u6709\u5df2\u751f\u6548\u7279\u6548\u7684\u500d\u7387\u52a0\u6210)\u3002\u6bcf\u4e09\u6b21\u63b7\u51fa x3 \u83b7\u5f97\u989d\u5916\u4e00\u63b7\u3002\u6982\u7387\uff1ax3 2.5%\u3001x4 5%\u3001x5 8.5%\u3001x6 20%\u3001x7 21%\u3001x8 20%\u3001x10 13%\u3001x12 6%\u3001x15 3%\u3001x20 1%\u3002",
+    giant: "开局获得 3500 总分和 8 次弃牌，第 1-5 回合手牌补至 4/5/5/5/5 张，所有手牌倍率 +1；第 2-5 回合不能选择普通特效。每回合巨人先承受 max(巨人外其他玩家最低回合分×1.3, 巨人外其他玩家最高回合分×50%) 总分扣除；随后 AOE 使所有非巨人扣除巨人手牌裸分的 30%。回合分低于巨人手牌裸分的非巨人受到一次 30% 猛击；非巨人回合最高分玩家再额外受到一次 60% 猛击，并列最高均生效且两种猛击可以叠加。第 1-5 回合可在出牌前使用一次防御姿态，分别减免当回合巨人负担的 80%/70%/60%/50%/40%。每局最多一位巨人。",
+    dice: "开局弃牌次数改为 6。每回合最终倍率取 max(最大骰子点数 + 已生效特效倍率加成, 牌型基础倍率 + 已生效特效倍率加成)。暗隐置换、虚空侵蚀、刷新球、镜中世界、镜中人、歌莉娅、虚空索敌、混沌骰子各永久增加 1 个骰子。每次掷出 x3 都会立即触发厄运补偿，额外获得一掷。概率：x3 2.5%、x4 5%、x5 8.5%、x6 20%、x7 21%、x8 20%、x10 13%、x12 6%、x15 3%、x20 1%。",
     "big-short": "\u5f00\u5c40\u5f03\u724c\u6b21\u6570\u6539\u4e3a 6\u3002\u6bcf\u56de\u5408\u51fa\u724c\u524d\u505a\u7a7a\u53e6\u4e00\u4f4d\u73a9\u5bb6\uff0c\u4f46\u4e0d\u4f1a\u6539\u53d8\u8be5\u73a9\u5bb6\u7684\u5206\u6570\u3002\u82e5\u76ee\u6807\u4e3a\u6700\u4f4e\u5206\uff0c\u4f60\u83b7\u5f97 50/100/150/200/300\uff0c\u5e76\u6309\u672c\u5c40\u7d2f\u8ba1\u505a\u7a7a\u6210\u529f\u6b21\u6570\u518d\u83b7\u5f97 0/50/100/300/500\uff1b\u82e5\u9884\u6d4b\u5931\u8d25\uff0c\u4f60\u7684\u603b\u5206\u989d\u5916 -50/-80/-80/-80/-80\u3002",
     "going-long": "\u5f00\u5c40\u5f03\u724c\u6b21\u6570\u6539\u4e3a 6\u3002\u6bcf\u56de\u5408\u51fa\u724c\u524d\u505a\u591a\u4e00\u4f4d\u73a9\u5bb6\uff08\u53ef\u4ee5\u9009\u81ea\u5df1\uff09\uff0c\u4f46\u4e0d\u4f1a\u6539\u53d8\u8be5\u73a9\u5bb6\u7684\u5206\u6570\u3002\u82e5\u76ee\u6807\u4e3a\u672c\u56de\u5408\u6700\u9ad8\u5206\uff0c\u4f60\u83b7\u5f97 50/100/150/200/300\uff0c\u5e76\u6309\u672c\u5c40\u7d2f\u8ba1\u505a\u591a\u6210\u529f\u6b21\u6570\u518d\u83b7\u5f97 0/50/100/300/500\u3002",
     "fate-collector": "\u5f00\u5c40\u5f03\u724c\u6b21\u6570\u6539\u4e3a 6\u3002\u4e94\u56de\u5408\u5185\u7b2c\u4e00\u6b21\u6253\u51fa\u4e00\u79cd\u81ea\u5df1\u6b64\u524d\u672a\u6253\u51fa\u7684\u724c\u578b\u65f6\uff0c\u6309\u7b2c 1/2/3/4/5 \u79cd\u5206\u522b\u83b7\u5f97 +20/+80/+150/+300/+400 \u56de\u5408\u5206\u3002",
-    clod: "\u7b2c 1/2/3/4/5 \u56de\u5408\u624b\u724c\u6570\u6539\u4e3a 4/5/6/6/6\uff0c\u5f00\u5c40\u5f03\u724c\u6b21\u6570\u6539\u4e3a 6\uff0c\u4e0d\u518d\u6bcf\u56de\u5408\u989d\u5916\u589e\u52a0\u5f03\u724c\u3002"
+    clod: "\u7b2c 1/2/3/4/5 \u56de\u5408\u624b\u724c\u6570\u6539\u4e3a 4/5/6/6/6\uff0c\u5f00\u5c40\u5f03\u724c\u6b21\u6570\u6539\u4e3a 6\uff0c\u4e0d\u518d\u6bcf\u56de\u5408\u989d\u5916\u589e\u52a0\u5f03\u724c\u3002",
+    "hanged-man": "初始拥有 5 次弃牌。除 A 仍为 15 点外，牌面基础点数按 14-原点数计算；高牌、一对、两对、三条和顺子的基础倍率均为 x6。",
+    persona: "初始拥有 3 次弃牌，每局最多两位。你能看见每位其他玩家剩余手牌中常规点数最高的一张；第 1-5 回合每回合最多复制 1 张可见牌用于出牌，仍须至少包含一张公共牌。复制不会移除原牌，但原玩家之后打出该实体牌时，其基础计分点数减半。",
+    "american-psycho": "开局拥有 5 次弃牌，每局最多一位。只有你本人能看见真实 FATE；其他玩家会看到一个固定的非巨人伪装 FATE。每回合全部结算结束后，以包含巨人在内的所有玩家最终分数统计 n（总分高于你）与 m（回合分高于你）；若初始 m=n=0，先把你的本回合得分降至 70%，再按结算后的排名重新统计。下一回合计分点数 +m×5，n≤3 时倍率 +max(1,n)，n>3 时倍率 +min(3,n)。若某位玩家同时以回合分和总分严格高于你累计 3 个回合，该玩家成为刺杀目标；你可在之后自己的回合出牌前选择刺杀，使其结算时额外失去你本回合 100% 的回合得分。每局最多刺杀两个不同目标，每回合最多一个；每次发动后，本局后续 n、m 永久各 +1。"
   } : {
-    giant: "Start with 3,300 total score and 8 discard uses. Choose no normal effects in rounds 2-5. Each round, the Giant first loses max(1.3x the lowest non-Giant round score, 50% of the highest non-Giant round score). AOE then deducts 20% of the Giant's bare hand score from every non-Giant player's total. Every non-Giant player whose round score is lower than that bare hand score is also Smashed for another 20%. Once in rounds 1-5, Defense Stance reduces that round's Giant burden by 80%/70%/60%/50%/40%. Only one Giant per game.",
-    dice: "Start with 6 discard uses. The final multiplier is max(highest die roll + all active effect multiplier bonuses, hand-type multiplier + those same bonuses). Every three x3 rolls grant an extra roll. Odds: x3 2.5%, x4 5%, x5 8.5%, x6 20%, x7 21%, x8 20%, x10 13%, x12 6%, x15 3%, x20 1%.",
+    giant: "Start with 3,500 total score, 8 discard uses, 4/5/5/5/5 hand cards, and +1 mult on every hand. Choose no normal effects in rounds 2-5. Each round, the Giant first loses max(1.3x the lowest non-Giant round score, 50% of the highest non-Giant round score). AOE deducts 30% of the Giant's bare hand score from every non-Giant. Every non-Giant below that bare score is Smashed for 30%, while every tied non-Giant round leader receives a separate 60% leader Smash; both can stack. Once in rounds 1-5, Defense Stance reduces that round's Giant burden by 80%/70%/60%/50%/40%. Only one Giant per game.",
+    dice: "Start with 6 discard uses. The final multiplier is max(highest die roll + all active effect multiplier bonuses, hand-type multiplier + those same bonuses). Shadow Swap, Void Erosion, Refresher Orb, World in Mirror, Man in Mirror, GOELIA, Void Targeting, and Chaos Dice each permanently add one die. Every x3 immediately triggers Misfortune and grants one extra roll. Odds: x3 2.5%, x4 5%, x5 8.5%, x6 20%, x7 21%, x8 20%, x10 13%, x12 6%, x15 3%, x20 1%.",
     "big-short": "Start with 6 discard uses. Predict another player to finish with the lowest round score without changing that player's score. A correct prediction grants 50/100/150/200/300 plus 0/50/100/300/500 based on cumulative Big Short successes; a miss costs you 50/80/80/80/80 total score.",
     "going-long": "Start with 6 discard uses. Predict any player, including yourself, to finish with the highest round score without changing that player's score. A correct prediction grants 50/100/150/200/300 plus 0/50/100/300/500 based on cumulative Going Long successes.",
     "fate-collector": "Start with 6 discard uses. The first time you play each new hand type, gain 20/80/150/300/400 round score for your 1st-5th collected type.",
-    clod: "Your hand sizes become 4/5/6/6/6 in rounds 1-5 and you start with 6 discard uses. You no longer gain an extra discard each round."
+    clod: "Your hand sizes become 4/5/6/6/6 in rounds 1-5 and you start with 6 discard uses. You no longer gain an extra discard each round.",
+    "hanged-man": "Start with 5 discard uses. Ace remains 15 chips; every other card uses 14 minus its printed rank. High Card, One Pair, Two Pair, Three of a Kind, and Straight use x6 base multiplier.",
+    persona: "Start with 3 discard uses; at most two players may choose Persona per game. See the conventionally highest remaining hand card of every opponent. In every round, you may copy at most one revealed card while still including a community card. Copying does not remove the original, but that physical card scores half its base chips when its owner later plays it.",
+    "american-psycho": "Start with 5 discard uses; only one player may choose this FATE per game. Only you see the true FATE; every other player sees one fixed non-Giant disguise. After all settlement, n and m count every player, including the Giant, above your final total and round scores. If the initial counts are both zero, your round score first falls to 70%, then the counts are recomputed. Next round gains m x 5 chips and +max(1, n) mult when n <= 3, otherwise +min(3, n). A player who strictly beats both your round and total score in three accumulated rounds becomes an Assassination target. Before playing in a later round, you may mark one eligible target; at settlement they lose 100% of your round score. Assassination is limited to two different targets per game and one per round. Each use permanently adds 1 to both n and m for the rest of the game."
   };
-  if (descriptions[kind]) return descriptions[kind];
+  if (descriptions[kind]) {
+    const escapeNote = kind === "american-psycho"
+      ? (isZh()
+        ? " \u672c\u5c40\u5b58\u5728\u7f8e\u56fd\u7cbe\u795e\u75c5\u4eba\u65f6\uff0c\u5176\u4ed6\u73a9\u5bb6\u6bcf\u5c40\u53ef\u4f7f\u7528\u4e00\u6b21\u201c\u5feb\u9003\u201d\uff1b\u56de\u5408\u7ed3\u7b97\u65f6\u4ecd\u4fdd\u6301\u5f00\u542f\u624d\u4f1a\u6d88\u8017\u3002\u82e5\u6070\u597d\u6210\u4e3a\u523a\u6740\u76ee\u6807\uff0c\u5219\u514d\u53d7\u6263\u5206\uff0c\u4e14\u4e4b\u540e\u4e0d\u518d\u80fd\u6210\u4e3a\u523a\u6740\u76ee\u6807\u3002"
+        : " When American Psycho is present, every other player may use Run Away once per game. It is consumed only if left active at round settlement. If that player is targeted, they avoid the score loss and can never be targeted by Assassination again.")
+      : "";
+    return `${descriptions[kind]}${escapeNote}`;
+  }
   return "";
 }
 
@@ -3851,10 +4092,15 @@ function battleEffectName(effect) {
   if (effect.kind === "fate-collector") return scoreFateName(effect);
   if (effect.kind === "big-short") return scoreFateName(effect);
   if (effect.kind === "going-long") return scoreFateName(effect);
+  if (effect.kind === "american-psycho") return scoreFateName(effect);
+  if (effect.kind === "american-psycho-penalty") return isZh() ? "\u7f8e\u56fd\u7cbe\u795e\u75c5\u4eba\u9886\u5148\u60e9\u7f5a" : "American Psycho lead penalty";
+  if (effect.kind === "persona-card-penalty") return isZh() ? "Persona \u590d\u5236\u5370\u8bb0" : "Persona copy mark";
+  if (effect.kind === "hidden-fate") return "FATE";
   if (effect.kind === "giant-penalty") return isZh() ? "巨人负担" : "Giant burden";
   if (effect.kind === "big-short-miss") return isZh() ? "\u505a\u7a7a\u5931\u8d25" : "Big Short miss";
   if (effect.kind === "giant-aoe") return isZh() ? "\u5de8\u4eba AOE" : "Giant AOE";
   if (effect.kind === "giant-smash") return isZh() ? "\u5de8\u4eba\u731b\u51fb" : "Giant Smash";
+  if (effect.kind === "weakness") return isZh() ? "虚弱" : "Weakened";
   if (effect.kind === "fate-giant") return isZh() ? "\u5de8\u4eba\u500d\u7387" : "Giant multiplier";
   return effect.kind || "";
 }
@@ -3864,14 +4110,14 @@ function battleEffectDescription(effect) {
   if (effect.kind === "tomato-king") {
     const hits = Math.max(0, Number(effect.tomatoHits) || 0);
     return isZh()
-      ? `\u672c\u56de\u5408\u500d\u7387 +1\uff1b\u6b64\u524d\u547d\u4e2d ${hits} \u6b21 x min(\u672c\u6b21\u724c\u578b\u57fa\u7840\u500d\u7387, 1) \u52a0\u5165\u6700\u7ec8\u5206\u3002`
-      : `This round gains +1 mult; add ${hits} earlier hits x min(base hand multiplier, 1) to final score.`;
+      ? `\u672c\u56de\u5408\u500d\u7387 +1\uff1b\u6b64\u524d\u547d\u4e2d ${hits} \u6b21 x min(\u672c\u6b21\u724c\u578b\u57fa\u7840\u500d\u7387, 2) \u52a0\u5165\u6700\u7ec8\u5206\u3002`
+      : `This round gains +1 mult; add ${hits} earlier hits x min(base hand multiplier, 2) to final score.`;
   }
   if (effect.kind === "tomato-shooter") {
     const throws = Math.max(0, Number(effect.tomatoThrows) || 0);
     return isZh()
-      ? `\u672c\u56de\u5408\u500d\u7387 +1\uff1b\u6b64\u524d\u6295\u63b7 ${throws} \u6b21 x min(\u672c\u6b21\u724c\u578b\u57fa\u7840\u500d\u7387, 1) \u52a0\u5165\u6700\u7ec8\u5206\u3002`
-      : `This round gains +1 mult; add ${throws} earlier throws x min(base hand multiplier, 1) to final score.`;
+      ? `\u672c\u56de\u5408\u500d\u7387 +1\uff1b\u6b64\u524d\u6295\u63b7 ${throws} \u6b21 x min(\u672c\u6b21\u724c\u578b\u57fa\u7840\u500d\u7387, 2) \u52a0\u5165\u6700\u7ec8\u5206\u3002`
+      : `This round gains +1 mult; add ${throws} earlier throws x min(base hand multiplier, 2) to final score.`;
   }
   if (effect.kind === "tempered-tomato") {
     return isZh()
@@ -3887,10 +4133,10 @@ function battleEffectDescription(effect) {
   if (effect.kind === "red-chip") return isZh() ? `\u6253\u51fa\u7684\u7ea2\u8272\u724c\u6bcf\u5f20 +${effect.amount} \u70b9` : `Played red cards gain +${effect.amount} chips.`;
   if (effect.kind === "void-suit") return isZh() ? `从你开始，之后玩家的${suit}点数 -${effect.amount || 3}；你自己的${suit}改为每张 +4，且包含该花色时倍率 +1。` : `From you onward, ${suit} cards lose ${effect.amount || 3} chips. Your own ${suit} cards gain +4 instead, and add +1 mult if played.`;
   if (effect.kind === "pattern-reproduction") return isZh() ? "先选手牌复制后选手牌的花色，本回合倍率 +2.5。" : "The first selected hand card copies the second selected hand card's suit. This round gains +2.5 mult.";
-  if (effect.kind === "shadow-swap") return isZh() ? "一张手牌与一张公共牌交换；本回合点数 +5，倍率 +1。" : "Swap one hand card with one community card. This round gains +5 chips and +1 mult.";
-  if (effect.kind === "void-erosion") return isZh() ? "移除一张公共牌并补发；本回合点数 +5，倍率 +1。" : "Remove one community card and deal a replacement. This round gains +5 chips and +1 mult.";
-  if (effect.kind === "world-mirror") return isZh() ? "所有公共牌变为点数互补牌；本回合点数 +6，倍率 +2。" : "Mirror all community card ranks. This round gains +6 chips and +2 mult.";
-  if (effect.kind === "man-mirror") return isZh() ? "自己的手牌变为点数互补牌；本回合点数 +6，倍率 +2。" : "Mirror your hand card ranks. This round gains +6 chips and +2 mult.";
+  if (effect.kind === "shadow-swap") return isZh() ? "一张手牌与一张公共牌交换；本回合点数 +max(7, 点数差绝对值)，倍率 +1。" : "Swap one hand card with one community card. Gain max(7, absolute chip difference) chips and +1 mult.";
+  if (effect.kind === "void-erosion") return isZh() ? "移除一张公共牌并补发；本回合点数 +5、倍率 +1；按之后未出牌人数 n 再获得 +max(1,n) 倍率与 +30×n 最终分。" : "Replace one community card; gain +5 chips and +1 mult, then +max(1,n) mult and +30 x n final score for n players still to act.";
+  if (effect.kind === "world-mirror") return isZh() ? "所有公共牌变为点数互补牌；本回合点数 +max(10, 总点数差绝对值)，倍率 +1。差值计算时 A 按 1，正常计分时仍按 15。" : "Mirror all community ranks. Gain max(10, total absolute rank difference) chips and +1 mult. Ace counts as 1 for the difference but remains 15 when scored.";
+  if (effect.kind === "man-mirror") return isZh() ? "自己的手牌变为点数互补牌；本回合点数 +max(10, 总点数差绝对值)，倍率 +1。差值计算时 A 按 1，正常计分时仍按 15。" : "Mirror your hand ranks. Gain max(10, total absolute rank difference) chips and +1 mult. Ace counts as 1 for the difference but remains 15 when scored.";
   if (effect.kind === "draven") return isZh() ? "本回合倍率 +3.5；若本回合得分最高，额外获得当前最高总分的 20%。" : "This round gains +3.5 mult. If you lead this round, gain 20% of the current highest total score.";
   if (effect.kind === "goelia") return isZh() ? "\u672c\u73a9\u5bb6\u624b\u724c\u5728\u4e0d\u6539\u53d8\u82b1\u8272\u7684\u524d\u63d0\u4e0b\u53d8\u4e3a 8 \u5230 K \u7684\u4e0d\u91cd\u590d\u70b9\u6570\u3002" : "Your hand ranks become distinct ranks from 8 through K while keeping suits.";
   if (effect.kind === "shadow-targeting") return isZh() ? "与未出牌玩家随机两张手牌交换；倍率 +1，并额外加上换得牌的点数和。" : "Swap with two random cards from an unplayed target. Gain +1 mult and extra chips equal to gained cards.";
@@ -3920,7 +4166,7 @@ function battleEffectDescription(effect) {
   if (effect.kind === "bread-butter") return isZh() ? "本局之后所有顺子倍率 +2。每局一次。" : "For the rest of this game, your Straights gain +2 mult. Once per game.";
   if (effect.kind === "bread-cheese") return isZh() ? "本局之后所有三条倍率 +3。每局一次。" : "For the rest of this game, your Three of a Kind gains +3 mult. Once per game.";
   if (effect.kind === "bread-jam") return isZh() ? "本局之后所有两对倍率 +4。每局一次。" : "For the rest of this game, your Two Pair gains +4 mult. Once per game.";
-  if (effect.kind === "astral-body") return isZh() ? "本回合最终分 +1000；从本回合起本局每回合得分变为 50%。每局一次。" : "This round gains +1000 final score; from this round onward, your scores are halved. Once per game.";
+  if (effect.kind === "astral-body") return isZh() ? "选择时最终分 +1000，且该加分不受减益；只降低手牌结算分，第 5 回合无减益。每局一次。" : "Gain +1000 final score outside the penalty; only hand score is reduced, with no round-5 penalty. Once per game.";
   if (effect.kind === "tempered-tomato") return isZh() ? "持续判定番茄阈值；达标后每回合点数加入命中x0.5+投掷x0.2。每局一次。" : "Continuously checks tomato thresholds; once active, future rounds add hits x0.5 plus throws x0.2 chips. Once per game.";
   if (effect.kind === "returning-fundamentals") return isZh() ? "只在第 2/3 回合出现；本局之后不能再选特效，并获得持续点数与倍率。每局一次。" : "Only appears in rounds 2/3. You cannot choose more effects and gain persistent chips and mult. Once per game.";
   if (effect.kind === "draw-sword") return isZh() ? "只在第 2/3 回合出现；本局之后不能再弃牌，并获得持续点数与倍率。每局一次。" : "Only appears in rounds 2/3. You cannot discard and gain persistent chips and mult. Once per game.";
@@ -3932,39 +4178,48 @@ function battleEffectDescription(effect) {
   if (effect.kind === "giant-killer") return isZh() ? "仅选择回合和下一回合生效，按与最高总分的差距获得 x1.3/x1.45/x1.6/x1.75/x1.9；之后消失且本局不再出现。" : "Active this round and the next for x1.3/x1.45/x1.6/x1.75/x1.9 by the gap to the leader, then expires and cannot appear again this game.";
   if (effect.kind === "matthew-effect") return isZh() ? "本回合倍率 +2；之后每次单回合最高分，额外获得 3 次弃牌。每局一次。" : "This round gains +2 mult; later round wins grant 3 extra discards. Once per game.";
   if (effect.kind === "critical-switch-hand") return isZh() ? "本局之后暴击率 +25%；每回合若至少一张牌暴击，额外获得 1 次弃牌。每局一次。" : "For the rest of this game, gain +25% crit chance; any crit in a round grants 1 extra discard. Once per game.";
-  if (effect.kind === "rambo") return isZh() ? "\u82e5 15 \u79d2\u5185\u51fa\u724c\uff0c\u672c\u56de\u5408\u70b9\u6570 +10 \u540e\u518d\u4e58\u500d\u7387\u3002" : "If you play within 15 seconds, gain +10 chips before multiplying.";
+  if (effect.kind === "rambo") return isZh() ? "20 \u79d2\u5185\u51fa\u724c\u65f6\u8ba1\u5206\u70b9\u6570 +30\u3001\u500d\u7387 +2\uff1b10 \u79d2\u5185\u6539\u4e3a\u8ba1\u5206\u70b9\u6570 +60\u3001\u500d\u7387 +4\u3002" : "Play within 20 seconds for +30 chips and +2 mult; within 10 seconds for +60 chips and +4 mult instead.";
   return "";
 }
 
 function battleBalanceEffectDescription(effect) {
   if (!effect) return "";
   const suit = battleSuitName(effect.suit);
-  if (effect.kind === "rambo") return isZh()
-    ? "\u7ea2\u6e29\u706b\u70e4\uff1a20 \u79d2\u5185\u51fa\u724c\u65f6\u8ba1\u5206\u70b9\u6570 +15\u3001\u500d\u7387 +1\uff1b10 \u79d2\u5185\u51fa\u724c\u65f6\u6539\u4e3a\u8ba1\u5206\u70b9\u6570 +30\u3001\u500d\u7387 +3\u3002"
-    : "Rambo: play within 20 seconds for +15 chips and +1 mult; play within 10 seconds for +30 chips and +3 mult instead.";
+  if (effect.kind === "weakness") return isZh() ? "本回合完整手牌得分降为 75%；只持续一回合。" : "Your complete hand score is reduced to 75% this round. Lasts one round.";
   if (effect.kind === "suit-chip") return isZh()
-    ? `${suit}点数增强：按本次五张牌的同花色数量，获得 max(8, 4×匹配张数) 点，最高 20 点；本回合倍率 +1。`
-    : `${suit} chip boost: gain max(8, 4 x matching cards) chips, capped at 20, and +1 mult this round.`;
-  if (effect.kind === "rank-chip") {
-    const rank = effect.rank || "-";
+    ? `${suit}点数增强：按本次五张牌的同花色数量，获得 max(20, 8×匹配张数) 点，最高 40 点；本回合倍率 +1。`
+    : `${suit} chip boost: gain max(20, 8 x matching cards) chips, capped at 40, and +1 mult this round.`;
+  if (effect.kind === "rank-chip") return isZh()
+    ? (effect.rank ? `${effect.rank}点数增强：获得 max(20, 10×匹配张数) 点，最高 50 点；本回合倍率 +1。` : "点数增强：选择一张当前手牌或公共牌来确定实际存在的点数；获得 max(20, 10×匹配张数) 点，最高 50 点，倍率 +1。")
+    : (effect.rank ? `${effect.rank} rank boost: gain max(20, 10 x matching cards) chips, capped at 50, and +1 mult.` : "Rank boost: choose an existing rank from your hand or the board; gain max(20, 10 x matches), capped at 50, and +1 mult.");
+  if (effect.kind === "pair-mult") return isZh() ? "对子引擎：点数增加 max(12, 12×对子数量)；一对或两对时倍率再 +2.5。" : "Pair engine: gain max(12, 12 x pair ranks) chips; One Pair and Two Pair also gain +2.5 mult.";
+  if (effect.kind === "flush-mult") return isZh() ? "同花引擎：无条件 +7 点；同花或同花顺时倍率再 +1.5。" : "Flush engine: gain +7 chips; Flush and Straight Flush also gain +1.5 mult.";
+  if (effect.kind === "red-chip") return isZh() ? "红色增幅：红桃、方块每张 +7；黑桃、梅花每张 +5；本回合倍率 +2。" : "Red boost: Hearts and Diamonds gain +7 chips each; Spades and Clubs gain +5 each; gain +2 mult.";
+  if (effect.kind === "void-suit") return isZh()
+    ? `${suit}虚无封印：从你开始，之后玩家的${suit}点数 -3；你自己的${suit}改为每张 +12，且五张牌包含该花色时倍率 +2。`
+    : `${suit} Void Seal: from you onward, later players' ${suit} cards lose 3 chips. Your own gain +12 each instead, and a play containing that suit gains +2 mult.`;
+  if (effect.kind === "shadow-swap") {
+    const difference = Math.max(0, Number(effect.swappedChipDifference) || 0);
     return isZh()
-      ? (effect.rank ? `${rank}点数增强：本回合额外获得 max(10, 6×匹配张数) 点，最高 24 点。` : "点数增强：选择一张当前手牌或公共牌来确定实际存在的点数；随后按该点数的匹配张数加成。")
-      : (effect.rank ? `${rank} rank boost: gain max(10, 6 x matching cards) chips, capped at 24.` : "Rank boost: choose a current hand or community card to set an existing rank.");
+      ? `暗隐置换：交换一张手牌与公共牌；点数 +max(7, 点数差绝对值)${difference ? `，本次为 +${Math.max(7, difference)}` : ""}，倍率 +1。`
+      : `Shadow Swap: exchange one hand and community card; gain max(7, absolute chip difference)${difference ? ` = ${Math.max(7, difference)}` : ""} chips and +1 mult.`;
   }
-  if (effect.kind === "pair-mult") return isZh()
-    ? "对子引擎：计分点数增加 max(8, 8×对子数量) 点；若为一对或两对，倍率额外 +2。"
-    : "Pair engine: gain max(8, 8 x pair ranks) chips; One Pair and Two Pair also gain +2 mult.";
-  if (effect.kind === "flush-mult") return isZh()
-    ? "同花引擎：无条件额外 +7 点；若为同花或同花顺，倍率额外 +1.5。"
-    : "Flush engine: gain +7 chips; Flush and Straight Flush also gain +1.5 mult.";
-  if (effect.kind === "red-chip") return isZh()
-    ? "红色增幅：本次五张牌中，红桃或方块每张 +4 点，黑桃或梅花每张 +2 点。"
-    : "Red boost: Hearts and Diamonds gain +4 chips each; Spades and Clubs gain +2 each.";
+  if (["world-mirror", "man-mirror"].includes(effect.kind)) {
+    const difference = Math.max(0, Number(effect.mirrorChipDifference) || 0);
+    const name = effect.kind === "world-mirror" ? (isZh() ? "镜中世界" : "World in Mirror") : (isZh() ? "镜中人" : "Man in Mirror");
+    return isZh()
+      ? `${name}：互补牌变化前后点数差绝对值之和，点数 +max(10, 差值和)${difference ? `，本次为 +${Math.max(10, difference)}` : ""}；倍率 +1。差值计算时 A 按 1，正常计分时仍按 15。`
+      : `${name}: gain max(10, total absolute rank difference after mirroring)${difference ? ` = ${Math.max(10, difference)}` : ""} chips and +1 mult. Ace counts as 1 for the difference but remains 15 when scored.`;
+  }
+  if (effect.kind === "goelia") {
+    const difference = Math.max(0, Number(effect.rankDifferenceTotal) || 0);
+    return isZh()
+      ? `歌莉娅：手牌点数变为互不重复的 8 至 K；点数额外加入所有变化前后点数差绝对值之和${difference ? `，本次为 +${difference}` : ""}。`
+      : `GOELIA: hand ranks become distinct 8 through K; add the total absolute chip difference${difference ? `, +${difference} this time` : ""}.`;
+  }
   if (effect.kind === "void-erosion") {
     const following = Math.max(0, Number(effect.followingUnplayedPlayers) || 0);
-    return isZh()
-      ? `选择并重发一张公共牌；本回合点数 +5、倍率 +1，并额外获得 +${Math.max(1, following)} 倍率和 +${following * 70} 总分（之后尚有 ${following} 位未出牌玩家）。`
-      : `Replace one community card. Gain +5 chips, +1 mult, then +${Math.max(1, following)} mult and +${following * 70} final score for ${following} later unplayed players.`;
+    return isZh() ? `选择并重发一张公共牌；点数 +5、倍率 +1，并额外 +${Math.max(1, following)} 倍率和 +${following * 30} 总分。` : `Replace one community card. Gain +5 chips, +1 mult, then +${Math.max(1, following)} mult and +${following * 30} final score.`;
   }
   if (effect.kind === "shadow-targeting") {
     const gained = Math.max(0, Number(effect.gainedChipBonus) || 0);
@@ -3982,23 +4237,8 @@ function battleBalanceEffectDescription(effect) {
     ? "大力：本回合手牌结算后，最终总分额外增加 100 + 手牌得分×25%，最高增加 200。"
     : "Vigorous: after hand scoring, add 100 + 25% of hand score to final score, capped at 200.";
   if (effect.kind === "rambo") return isZh()
-    ? "红温火烤：在回合开始后 20 秒内出牌，计分点数 +10 后乘以倍率，且最终总分额外 +150。"
-    : "Rambo: play within 20 seconds for +10 chips before multiplier and +150 final score.";
-  if (effect.kind === "bread-cheese") return isZh()
-    ? "面包和奶酪：从本回合起每回合计分点数 +5；三条、葫芦或四条时，再 +7 点和 +1 倍率。每局一次。"
-    : "Bread and cheese: from this round on gain +5 chips every round; Three of a Kind, Full House, and Four of a Kind also gain +7 chips and +1 mult. Once per game.";
-  if (effect.kind === "bread-butter") return isZh()
-    ? "面包和黄油：从本回合起每回合计分点数 +4；一对或两对时，再 +5 点和 +2 倍率。每局一次。"
-    : "Bread and butter: from this round on gain +4 chips every round; One Pair and Two Pair also gain +5 chips and +2 mult. Once per game.";
-  if (effect.kind === "bread-jam") return isZh()
-    ? "面包和果酱：从本回合起每回合计分点数 +4；顺子时，再 +5 点和 +2 倍率。每局一次。"
-    : "Bread and Jam: from this round on gain +4 chips every round; Straights also gain +5 chips and +2 mult. Once per game.";
-  if (effect.kind === "astral-body") return isZh()
-    ? "星界躯体：选择时最终分 +1000，且该加分不受减益；只降低手牌结算分，第 5 回合无减益。每局一次。"
-    : "Astral Body: gain +1000 final score outside the penalty; only hand score is reduced, with no round-5 penalty. Once per game.";
-  if (effect.kind === "astral-body-penalty") return isZh()
-    ? "星界躯体惩罚：只降低本回合手牌结算分，不影响额外最终分；第 5 回合不再生效。"
-    : "Astral Body penalty: reduces only this round's hand score, not flat final-score bonuses, and no longer applies in round 5.";
+    ? "红温火烤：20 秒内出牌时计分点数 +30、倍率 +2；10 秒内出牌时改为计分点数 +60、倍率 +4。"
+    : "Rambo: play within 20 seconds for +30 chips and +2 mult; play within 10 seconds for +60 chips and +4 mult instead.";
   if (effect.kind === "tomato-king") {
     const hits = Math.max(0, Number(effect.tomatoHits) || 0);
     return isZh()
@@ -4028,9 +4268,27 @@ function battleBalanceEffectDescription(effect) {
   }
   if (effect.kind === "old-days-tomatoes") {
     const throws = Math.max(0, Number(effect.tomatoThrows) || 0);
-    return isZh()
-      ? `\u53ea\u5728\u7b2c 5 \u56de\u5408\u51fa\u73b0\u3002\u672c\u5c40\u6b64\u524d\u7684\u756a\u8304\u6295\u63b7\u6570 ${throws} \u00d70.5 \u52a0\u5165\u624b\u724c\u70b9\u6570\uff0c\u518d\u4e0e\u724c\u578b\u500d\u7387\u4e00\u8d77\u8ba1\u7b97\u3002`
-      : `Only appears in round 5. Earlier tomato throws this game add ${throws} x0.5 chips before hand multiplier.`;
+    const hits = Math.max(0, Number(effect.tomatoHits) || 0);
+    return isZh() ? `仅第 5 回合出现；投掷 ${throws} 次与被命中 ${hits} 次，共 +${throws + hits} 点加入手牌点数后再乘倍率。` : `Only appears in round 5. Add ${throws} throws and ${hits} hits (+${throws + hits} chips total) before the hand multiplier.`;
+  }
+  if (effect.kind === "tempered-tomato") return isZh() ? "达标后每回合在手牌结算后额外加入（命中×0.5 + 投掷×0.2）× min(本次牌型基础倍率, 1) 最终分。" : "Once active, after hand scoring add (hits x0.5 + throws x0.2) x min(base hand multiplier, 1) final score each round.";
+  if (effect.kind === "dance-illusions") return isZh() ? "暴击率 +25%，攻速 +100%，本回合 +5 点、+1.5 倍率。自己的番茄只增加自己的投掷数，不给对手增加被命中数；投向自己时仍增加自己的被命中数，投掷方不增加投掷数。" : "Gain +25% crit, +100% attack speed, +5 chips and +1.5 mult this round. Your tomatoes add only to your throw count and do not add hit count to opponents. Tomatoes thrown at you still add your hit count, while the thrower gains no throw count.";
+  if (effect.kind === "bread-cheese") return isZh() ? "从本回合起每回合 +5 点；三条、葫芦、四条再 +7 点、+1 倍率。" : "From this round on gain +5 chips; Three of a Kind, Full House, and Four of a Kind also gain +7 chips and +1 mult.";
+  if (effect.kind === "bread-butter") return isZh() ? "从本回合起每回合 +4 点；一对、两对再 +5 点、+2 倍率。" : "From this round on gain +4 chips; One Pair and Two Pair also gain +5 chips and +2 mult.";
+  if (effect.kind === "bread-jam") return isZh() ? "从本回合起每回合 +4 点；顺子再 +5 点、+2 倍率。" : "From this round on gain +4 chips; Straights also gain +5 chips and +2 mult.";
+  if (effect.kind === "astral-body") return isZh() ? "选择时最终分 +1000，且该加分不受减益；第 1/2/3/4 回合只将手牌结算分降为 70%/70%/60%/50%，第 5 回合无减益。" : "Gain +1000 final score outside the penalty; rounds 1/2/3/4 reduce only hand score to 70%/70%/60%/50%, and round 5 has no penalty.";
+  if (effect.kind === "astral-body-penalty") return isZh() ? "星界躯体惩罚：只降低本回合手牌结算分，不影响额外最终分；第 5 回合不再生效。" : "Astral Body penalty: reduces only this round's hand score, not flat final-score bonuses, and no longer applies in round 5.";
+  return "";
+}
+
+function battleBalanceEffectDescription(effect) {
+  const updated = battleCurrentEffectDescription(effect);
+  if (updated) return updated;
+  if (!effect) return "";
+  const suit = battleSuitName(effect.suit);
+  if (effect.kind === "tomato-king") {
+    const hits = Math.max(0, Number(effect.tomatoHits) || 0);
+    return isZh() ? `\u672c\u56de\u5408\u500d\u7387 +1\uff1b\u624b\u724c\u7ed3\u7b97\u540e\u6700\u7ec8\u5206\u989d\u5916 +${hits * 2}\uff08${hits} \u6b21 \u00d72\uff09\u3002\u6bcf\u5c40\u4e00\u6b21\u3002` : `This round gains +1 mult; after hand scoring, add +${hits * 2} final score (${hits} hits x2). Once per game.`;
   }
   if (effect.kind === "lord-dominicks-regards") {
     return isZh()
@@ -4057,6 +4315,19 @@ function battleBalanceEffectDescription(effect) {
       ? "\u4ec5\u9009\u62e9\u56de\u5408\u548c\u4e0b\u4e00\u56de\u5408\u751f\u6548\uff0c\u6309\u4e0e\u9886\u5148\u8005\u7684\u5206\u5dee\u83b7\u5f97 x1.3/x1.45/x1.6/x1.75/x1.9\uff1b\u4e4b\u540e\u6d88\u5931\u4e14\u672c\u5c40\u4e0d\u518d\u51fa\u73b0\u3002"
       : "Active this round and the next for x1.3/x1.45/x1.6/x1.75/x1.9 by the gap to the leader, then expires and cannot appear again this game.";
   }
+  if (effect.kind === "tempered-tomato") return isZh() ? "\u8fbe\u6807\u540e\u6bcf\u56de\u5408\u5728\u624b\u724c\u7ed3\u7b97\u540e\u989d\u5916\u52a0\u5165\uff08\u547d\u4e2d\u00d70.5 + \u6295\u63b7\u00d70.2\uff09\u00d70.75 \u6700\u7ec8\u5206\u3002\u6bcf\u5c40\u4e00\u6b21\u3002" : "Once active, after hand scoring add (hits x0.5 + throws x0.2) x0.75 final score each round. Once per game.";
+  if (effect.kind === "dance-illusions") return isZh() ? "\u66b4\u51fb\u7387 +25%\uff0c\u653b\u901f +100%\uff0c\u672c\u56de\u5408 +5 \u70b9\u6570\u3001+1.5 \u500d\u7387\u3002\u4f60\u7684\u756a\u8304\u53ea\u7ed9\u81ea\u5df1\u589e\u52a0\u6295\u63b7\u8ba1\u6570\uff0c\u4e0d\u7ed9\u5bf9\u624b\u589e\u52a0\u88ab\u547d\u4e2d\u8ba1\u6570\uff1b\u522b\u4eba\u6295\u4f60\u65f6\uff0c\u4f60\u4ecd\u83b7\u5f97\u88ab\u547d\u4e2d\u8ba1\u6570\uff0c\u5bf9\u65b9\u4e0d\u83b7\u5f97\u6295\u63b7\u8ba1\u6570\u3002\u6bcf\u5c40\u4e00\u6b21\u3002" : "Gain +25% crit, +100% attack speed, +5 chips and +1.5 mult this round. Your tomatoes add only to your throw count and do not add hit count to opponents. Tomatoes thrown at you still add your hit count, while the thrower gains no throw count. Once per game.";
+  if (effect.kind === "runaans-hurricane") return isZh() ? "\u66b4\u51fb\u7387 +25%\uff0c\u653b\u901f +40%\u3002\u6bcf\u6b21\u6295\u63b7\u540e\u5411\u968f\u673a\u5176\u4ed6\u73a9\u5bb6\u989d\u5916\u53d1\u5c04 2 \u4e2a\u4e0d\u9012\u5f52\u7684\u5206\u88c2\u756a\u8304\u3002\u6bcf\u5c40\u4e00\u6b21\u3002" : "Gain +25% crit and +40% attack speed. Each tomato fires two non-recursive split tomatoes at random other players. Once per game.";
+  if (effect.kind === "old-days-tomatoes") {
+    const throws = Math.max(0, Number(effect.tomatoThrows) || 0);
+    const hits = Math.max(0, Number(effect.tomatoHits) || 0);
+    return isZh() ? `\u53ea\u5728\u7b2c 5 \u56de\u5408\u51fa\u73b0\uff1b\u6295\u63b7 ${throws} \u6b21\u4e0e\u88ab\u547d\u4e2d ${hits} \u6b21\uff0c\u5171 +${throws + hits} \u70b9\u52a0\u5165\u624b\u724c\u70b9\u6570\u540e\u518d\u4e58\u500d\u7387\u3002` : `Only appears in round 5. Add ${throws} throws and ${hits} hits (+${throws + hits} chips total) before the hand multiplier.`;
+  }
+  if (effect.kind === "lord-dominicks-regards") return isZh() ? "\u66b4\u51fb\u7387 +25%\uff1b\u4ece\u672c\u56de\u5408\u8d77\uff0c\u9ad8\u724c\u81f3\u987a\u5b50\u7684\u724c\u578b\u500d\u7387\u81f3\u5c11\u4e3a 6\u3002\u6bcf\u5c40\u4e00\u6b21\u3002" : "Gain +25% crit. From this round onward, High Card through Straight use at least x6 hand multiplier. Once per game.";
+  if (effect.kind === "collector") return isZh() ? "\u66b4\u51fb\u7387 +25%\uff0c\u672c\u56de\u5408 +10 \u70b9\u6570\u3002\u4e4b\u540e\u82e5\u4e0a\u4e00\u56de\u5408\u7b2c\u4e00\uff0c\u83b7\u5f97 2 \u6b21\u5f03\u724c\u548c\u5176\u4ed6\u73a9\u5bb6\u603b\u6295\u63b7\u6570\u7684 10%\uff08\u53d6\u6574\uff09\u4f5c\u4e3a\u989d\u5916\u6295\u63b7\u8ba1\u6570\u3002\u6bcf\u5c40\u4e00\u6b21\u3002" : "Gain +25% crit and +10 chips this round. After a previous-round win, gain 2 discards and 10% of other players' total throws, floored, as bonus throw count. Once per game.";
+  if (effect.kind === "returning-fundamentals") return isZh() ? "\u53ea\u5728\u7b2c 2/3 \u56de\u5408\u51fa\u73b0\uff1b\u4e4b\u540e\u4e0d\u80fd\u518d\u9009\u7279\u6548\uff0c\u7acb\u5373 +4 \u6b21\u5f03\u724c\u3002\u7b2c 2/3/4/5 \u56de\u5408\u5747 +18 \u70b9\u6570\uff0c\u500d\u7387 +1.5/+1.5/+1.5/+1.75\u3002" : "Only appears in rounds 2/3. You cannot choose more effects and gain 4 discards. Rounds 2/3/4/5 gain +18 chips and +1.5/+1.5/+1.5/+1.75 mult.";
+  if (effect.kind === "draw-sword") return isZh() ? "\u53ea\u5728\u7b2c 2/3 \u56de\u5408\u51fa\u73b0\uff1b\u4e4b\u540e\u4e0d\u80fd\u5f03\u724c\u3002\u7b2c 2/3/4/5 \u56de\u5408\u5747 +15 \u70b9\u6570\u548c +2.25 \u500d\u7387\u3002" : "Only appears in rounds 2/3. You cannot discard. Rounds 2/3/4/5 each gain +15 chips and +2.25 mult.";
+  if (effect.kind === "giant-killer") return isZh() ? "\u4ec5\u9009\u62e9\u56de\u5408\u548c\u4e0b\u4e00\u56de\u5408\u751f\u6548\uff0c\u6309\u4e0e\u9886\u5148\u8005\u7684\u5206\u5dee\u83b7\u5f97 x1.3/x1.45/x1.6/x1.75/x1.9\uff1b\u4e4b\u540e\u6d88\u5931\u4e14\u672c\u5c40\u4e0d\u518d\u51fa\u73b0\u3002" : "Active this round and the next for x1.3/x1.45/x1.6/x1.75/x1.9 by the gap to the leader, then expires and cannot appear again this game.";
   if (effect.kind === "tomato-king") {
     const hits = Math.max(0, Number(effect.tomatoHits) || 0);
     const bonus = Math.round(hits * 1.5 * 10) / 10;
@@ -4152,12 +4423,12 @@ function battleBalanceEffectDescription(effect) {
   }
   if (effect.kind === "dance-illusions") {
     return isZh()
-      ? "\u66b4\u51fb\u7387 +25%\uff0c\u653b\u51fb\u901f\u5ea6 +65%\uff0c\u5e76\u8fdb\u5165\u5e7d\u7075\u72b6\u6001\uff1a\u5411\u8be5\u73a9\u5bb6\u6295\u63b7\u756a\u8304\u65f6\uff0c\u547d\u4e2d\u4e0d\u8ba1\u5165\u6295\u63b7\u8005\u7684\u6295\u63b7\u6b21\u6570\uff0c\u4f46\u4f1a\u8ba1\u5165\u8be5\u73a9\u5bb6\u88ab\u6295\u63b7\u7684\u6b21\u6570\u3002\u6bcf\u5c40\u4e00\u6b21\u3002"
-      : "Gain +25% crit chance and +65% attack speed. You become ghosted: tomatoes thrown at you still count as hits against you, but do not count as throws for the thrower. Once per game.";
+      ? "\u66b4\u51fb\u7387 +25%\uff0c\u653b\u51fb\u901f\u5ea6 +100%\uff0c\u5e76\u8fdb\u5165\u5e7d\u7075\u72b6\u6001\uff1a\u5411\u8be5\u73a9\u5bb6\u6295\u63b7\u756a\u8304\u65f6\uff0c\u547d\u4e2d\u4e0d\u8ba1\u5165\u6295\u63b7\u8005\u7684\u6295\u63b7\u6b21\u6570\uff0c\u4f46\u4f1a\u8ba1\u5165\u8be5\u73a9\u5bb6\u88ab\u6295\u63b7\u7684\u6b21\u6570\u3002\u6bcf\u5c40\u4e00\u6b21\u3002"
+      : "Gain +25% crit chance and +100% attack speed. You become ghosted: tomatoes thrown at you still count as hits against you, but do not count as throws for the thrower. Once per game.";
   }
   if (effect.kind === "astral-body-penalty") {
     return isZh()
-      ? "星界身体的持续惩罚：本局之后每回合最终得分变为 50%。"
+      ? "星界躯体持续效果：只降低手牌结算分，第 5 回合不再减益。"
       : "Astral Body: reduces only hand score and no longer penalizes round 5.";
   }
   return "";
@@ -4268,7 +4539,11 @@ async function logout() {
   await api("/api/logout", { method: "POST" });
   state.user = null;
   state.profile = null;
+  state.players = [];
   state.showProfile = false;
+  state.showPlayerList = false;
+  state.playersLoading = false;
+  state.playerListScroll = 0;
   state.showPasswordModal = false;
   state.showFeedbackModal = false;
   state.passwordDraft = { oldPassword: "", newPassword: "", confirmPassword: "" };
@@ -4547,6 +4822,39 @@ async function chooseBattleFateTarget(targetSeatId) {
       method: "POST",
       body: { targetSeatId }
     });
+    setCurrentScoreTable(response.table);
+  } catch (error) {
+    state.error = error.message;
+  } finally {
+    state.battleFateBusy = false;
+  }
+  render();
+}
+
+async function chooseBattleAmericanPsychoAssassinationTarget(targetSeatId) {
+  if (!state.scoreTable || state.battleFateBusy) return;
+  state.battleFateBusy = true;
+  render();
+  try {
+    const response = await api(`/api/score-tables/${state.scoreTable.id}/fate-assassination-target`, {
+      method: "POST",
+      body: { targetSeatId }
+    });
+    setCurrentScoreTable(response.table);
+  } catch (error) {
+    state.error = error.message;
+  } finally {
+    state.battleFateBusy = false;
+  }
+  render();
+}
+
+async function toggleBattleAmericanPsychoEscape() {
+  if (!state.scoreTable || state.battleFateBusy) return;
+  state.battleFateBusy = true;
+  render();
+  try {
+    const response = await api(`/api/score-tables/${state.scoreTable.id}/fate-escape`, { method: "POST" });
     setCurrentScoreTable(response.table);
   } catch (error) {
     state.error = error.message;

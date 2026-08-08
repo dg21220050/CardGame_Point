@@ -2,27 +2,41 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
   FATE_DICE_OUTCOMES,
+  americanPsychoAssassinationEligibleSeatIds,
+  americanPsychoNextRoundBonus,
+  americanPsychoQualifyingTargetSeatIds,
+  americanPsychoSettlementPlan,
+  americanPsychoSettledRoundScore,
   createDeck,
   createEffectOptions,
   criticalProfileForEffects,
+  effectAddsFateDie,
   effectAllowedInRound,
   fateCollectorBonus,
+  fateDiceMisfortuneExtraRolls,
   fateDiceValueForRoll,
   fatePredictionCorrect,
   fatePredictionPlan,
   fatePredictionSuccessBonus,
   fateStartingDiscardUses,
+  fateChipValue,
   findBestPlay,
   giantAoePenalty,
   giantDefensePenalty,
   giantDefenseReduction,
   giantFatePenalty,
+  giantHandSize,
   giantKillerActiveInRound,
   giantKillerScoreFactor,
+  giantLeaderSmashPenalty,
   giantSettlementPlan,
   giantSmashPenalty,
+  mirrorRankDifference,
   nextFatePredictionSuccessCount,
+  personaBorrowLimit,
   royalFlushWins,
+  scoreEndingIds,
+  scoreLossEndingIds,
   scorePlay,
   tomatoCountRouting,
   tomatoThrowAllowed
@@ -82,21 +96,23 @@ test("a round without a crit receives the final-score consolation bonus", () => 
 test("suit, rank, red, pair, and flush boosts use the new values", () => {
   const high = cards(["2S", "5H", "7D", "9C", "JS"]);
   const suit = scorePlay(high, { kind: "suit-chip", suit: "S" });
-  assert.equal(suit.chips, 26);
+  assert.equal(suit.chips, 38);
   assert.equal(suit.multiplier, 2);
-  assert.equal(suit.score, 52);
+  assert.equal(suit.score, 76);
 
   const rank = scorePlay(high, { kind: "rank-chip", rank: "J" });
-  assert.equal(rank.globalChipBonuses[0].amount, 10);
-  assert.equal(rank.chips, 28);
+  assert.equal(rank.globalChipBonuses[0].amount, 20);
+  assert.equal(rank.chips, 38);
+  assert.equal(rank.multiplier, 2);
 
   const red = scorePlay(high, { kind: "red-chip" });
-  assert.equal(red.chips, 32);
-  assert.deepEqual(red.cardValues.map((entry) => entry.bonuses.find((bonus) => bonus.kind === "red-chip").amount), [2, 4, 4, 2, 2]);
+  assert.equal(red.chips, 47);
+  assert.equal(red.multiplier, 3);
+  assert.deepEqual(red.cardValues.map((entry) => entry.bonuses.find((bonus) => bonus.kind === "red-chip").amount), [5, 7, 7, 5, 5]);
 
   const pair = scorePlay(cards(["4S", "4H", "7D", "8C", "9C"]), { kind: "pair-mult" });
-  assert.equal(pair.globalChipBonuses[0].amount, 8);
-  assert.equal(pair.bonusMultiplier, 2);
+  assert.equal(pair.globalChipBonuses[0].amount, 12);
+  assert.equal(pair.bonusMultiplier, 2.5);
 
   const flush = scorePlay(cards(["2S", "5S", "7S", "9S", "JS"]), { kind: "flush-mult" });
   assert.equal(flush.globalChipBonuses[0].amount, 7);
@@ -108,7 +124,7 @@ test("action effects apply their chip, multiplier, and final-score stages", () =
   const voidErosion = scorePlay(high, { kind: "void-erosion", followingUnplayedPlayers: 2 });
   assert.equal(voidErosion.chips, 23);
   assert.equal(voidErosion.multiplier, 4);
-  assert.equal(voidErosion.score, 232);
+  assert.equal(voidErosion.score, 152);
 
   const targeting = scorePlay(high, { kind: "shadow-targeting", gainedChipBonus: 27 });
   assert.equal(targeting.multiplier, 3);
@@ -121,21 +137,51 @@ test("action effects apply their chip, multiplier, and final-score stages", () =
   assert.equal(chaos.score, 155);
 
   const ramboTwenty = scorePlay(high, { kind: "rambo", seconds: 20 }, { turnElapsedMs: 20000 });
-  assert.equal(ramboTwenty.chips, 33);
-  assert.equal(ramboTwenty.multiplier, 2);
-  assert.equal(ramboTwenty.score, 66);
+  assert.equal(ramboTwenty.chips, 48);
+  assert.equal(ramboTwenty.multiplier, 3);
+  assert.equal(ramboTwenty.score, 144);
 
   const ramboTen = scorePlay(high, { kind: "rambo", seconds: 20 }, { turnElapsedMs: 10000 });
-  assert.equal(ramboTen.chips, 48);
-  assert.equal(ramboTen.multiplier, 4);
-  assert.equal(ramboTen.score, 192);
+  assert.equal(ramboTen.chips, 78);
+  assert.equal(ramboTen.multiplier, 5);
+  assert.equal(ramboTen.score, 390);
 
   const vigorous = scorePlay(high, { kind: "vigorous" });
   assert.equal(vigorous.scoreBonuses.find((bonus) => bonus.kind === "vigorous").amount, 104.5);
   assert.equal(vigorous.score, 122);
 });
 
-test("tomato final-score bonuses cap the hand multiplier at one", () => {
+test("swap, mirror, GOELIA, and Void Seal use their recorded point differences", () => {
+  const high = cards(["2S", "5H", "7D", "9C", "JS"]);
+  const swap = scorePlay(high, { kind: "shadow-swap", swappedChipDifference: 6 });
+  assert.equal(swap.globalChipBonuses[0].amount, 7);
+  assert.equal(swap.multiplier, 2);
+
+  const world = scorePlay(high, { kind: "world-mirror", mirrorChipDifference: 32 });
+  assert.equal(world.globalChipBonuses[0].amount, 32);
+  assert.equal(world.multiplier, 2);
+  assert.equal(mirrorRankDifference(14), 12);
+  assert.equal(mirrorRankDifference(13), 12);
+  assert.equal(fateChipValue(cards(["AS"])[0]), 15);
+
+  const goelia = scorePlay(high, { kind: "goelia", rankDifferenceTotal: 17 });
+  assert.equal(goelia.globalChipBonuses[0].amount, 17);
+
+  const owner = scorePlay(high, { kind: "void-suit", suit: "H" }, {
+    seatId: "owner",
+    roundEffects: [{ kind: "void-suit", suit: "H", amount: 3, sourceSeatId: "owner" }]
+  });
+  assert.equal(owner.cardValues[1].bonuses.find((bonus) => bonus.kind === "void-suit").amount, 12);
+  assert.equal(owner.bonusMultiplier, 2);
+
+  const opponent = scorePlay(high, null, {
+    seatId: "opponent",
+    roundEffects: [{ kind: "void-suit", suit: "H", amount: 3, sourceSeatId: "owner" }]
+  });
+  assert.equal(opponent.cardValues[1].bonuses.find((bonus) => bonus.kind === "void-suit").amount, -2);
+});
+
+test("Tomato King and Tomato Shooter cap the hand multiplier at two", () => {
   const high = cards(["2S", "5H", "7D", "9C", "JS"]);
   const king = scorePlay(high, { kind: "tomato-king", tomatoHits: 6 });
   assert.equal(king.scoreBonuses.find((bonus) => bonus.kind === "tomato-king").amount, 6);
@@ -146,11 +192,11 @@ test("tomato final-score bonuses cap the hand multiplier at one", () => {
   assert.equal(shooter.score, 41);
 
   const twoPairKing = scorePlay(cards(["4S", "4H", "7D", "7C", "9C"]), { kind: "tomato-king", tomatoHits: 6 });
-  assert.equal(twoPairKing.scoreBonuses.find((bonus) => bonus.kind === "tomato-king").amount, 6);
+  assert.equal(twoPairKing.scoreBonuses.find((bonus) => bonus.kind === "tomato-king").amount, 12);
 
-  const oldDays = scorePlay(high, { kind: "old-days-tomatoes", tomatoThrows: 10, tomatoHits: 999 });
-  assert.equal(oldDays.globalChipBonuses.find((bonus) => bonus.kind === "old-days-tomatoes").amount, 5);
-  assert.equal(oldDays.score, 23);
+  const oldDays = scorePlay(high, { kind: "old-days-tomatoes", tomatoThrows: 10, tomatoHits: 4 });
+  assert.equal(oldDays.globalChipBonuses.find((bonus) => bonus.kind === "old-days-tomatoes").amount, 14);
+  assert.equal(oldDays.score, 32);
 
   const tempered = scorePlay(cards(["4S", "4H", "7D", "7C", "9C"]), null, {
     persistentEffects: { temperedTomato: true },
@@ -178,26 +224,39 @@ test("only the single selected Royal Flush suit wins instantly", () => {
 });
 
 test("The Giant burden, AOE, and Smash use the new balance values", () => {
+  assert.deepEqual([1, 2, 3, 4, 5].map(giantHandSize), [4, 5, 5, 5, 5]);
   assert.equal(giantFatePenalty([100, 400]), 200);
   assert.equal(giantFatePenalty([300, 400]), 390);
-  assert.equal(giantAoePenalty(401), 80);
+  assert.deepEqual([1, 2, 3, 4, 5].map(() => giantAoePenalty(100)), [30, 30, 30, 30, 30]);
   assert.equal(giantAoePenalty(0), 0);
-  assert.equal(giantSmashPenalty(401), 80);
+  assert.equal(giantSmashPenalty(401), 120);
+  assert.equal(giantLeaderSmashPenalty(401), 240);
 });
 
-test("The Giant's Smash targets every non-Giant below its bare hand score", () => {
+test("The Giant's Smash targets low scorers and separately targets every tied non-Giant leader", () => {
   const plan = giantSettlementPlan([
     { seatId: "giant", roundScore: 900 },
     { seatId: "below-giant", roundScore: 300 },
     { seatId: "equal-giant", roundScore: 401 },
-    { seatId: "above-giant", roundScore: 500 }
+    { seatId: "leader-a", roundScore: 500 },
+    { seatId: "leader-b", roundScore: 500 }
   ], "giant", 401);
 
   assert.equal(plan.burdenPenalty, 390);
-  assert.equal(plan.aoePenalty, 80);
-  assert.deepEqual(plan.aoeTargetSeatIds, ["below-giant", "equal-giant", "above-giant"]);
-  assert.equal(plan.smashPenalty, 80);
+  assert.equal(plan.aoePenalty, 120);
+  assert.deepEqual(plan.aoeTargetSeatIds, ["below-giant", "equal-giant", "leader-a", "leader-b"]);
+  assert.equal(plan.smashPenalty, 120);
   assert.deepEqual(plan.smashTargetSeatIds, ["below-giant"]);
+  assert.equal(plan.leaderSmashPenalty, 240);
+  assert.deepEqual(plan.leaderSmashTargetSeatIds, ["leader-a", "leader-b"]);
+
+  const overlapping = giantSettlementPlan([
+    { seatId: "giant", roundScore: 900 },
+    { seatId: "low", roundScore: 300 },
+    { seatId: "leader", roundScore: 500 }
+  ], "giant", 600);
+  assert.deepEqual(overlapping.smashTargetSeatIds, ["low", "leader"]);
+  assert.deepEqual(overlapping.leaderSmashTargetSeatIds, ["leader"]);
 });
 
 test("FATE collection rewards use their separate balance values", () => {
@@ -235,6 +294,22 @@ test("FATE prediction successes accumulate without resetting after a miss", () =
   assert.equal(fatePredictionSuccessBonus(5), 500);
 });
 
+test("Big Short and Going Long accept every player tied at the relevant extreme", () => {
+  const plan = fatePredictionPlan([
+    { seatId: "high-a", roundScore: 200 },
+    { seatId: "high-b", roundScore: 200 },
+    { seatId: "low-a", roundScore: 50 },
+    { seatId: "low-b", roundScore: 50 }
+  ], [
+    { seatId: "high-a", fateKind: "going-long", targetSeatId: "high-b" },
+    { seatId: "low-a", fateKind: "big-short", targetSeatId: "low-b" }
+  ]);
+
+  assert.deepEqual(plan.highestSeatIds.sort(), ["high-a", "high-b"]);
+  assert.deepEqual(plan.lowestSeatIds.sort(), ["low-a", "low-b"]);
+  assert.deepEqual(plan.outcomes.map((outcome) => outcome.correct), [true, true]);
+});
+
 test("FATE starting discard uses include the three six-discard prediction builds", () => {
   assert.equal(fateStartingDiscardUses("giant"), 8);
   assert.equal(fateStartingDiscardUses("dice"), 6);
@@ -242,7 +317,203 @@ test("FATE starting discard uses include the three six-discard prediction builds
   assert.equal(fateStartingDiscardUses("going-long"), 6);
   assert.equal(fateStartingDiscardUses("fate-collector"), 6);
   assert.equal(fateStartingDiscardUses("clod"), 6);
+  assert.equal(fateStartingDiscardUses("hanged-man"), 5);
+  assert.equal(fateStartingDiscardUses("persona"), 3);
+  assert.equal(fateStartingDiscardUses("american-psycho"), 5);
   assert.equal(fateStartingDiscardUses("unknown", 4), 4);
+});
+
+test("The Dice gains permanent dice from Shadow Swap and Void Erosion", () => {
+  assert.equal(effectAddsFateDie("shadow-swap"), true);
+  assert.equal(effectAddsFateDie("void-erosion"), true);
+  assert.equal(effectAddsFateDie("red-chip"), false);
+});
+
+test("The Hanged Man reverses non-Ace chips and raises its listed hand multipliers to six", () => {
+  const deck = createDeck();
+  assert.equal(fateChipValue(deck.find((card) => card.code === "2S"), "hanged-man"), 12);
+  assert.equal(fateChipValue(deck.find((card) => card.code === "KS"), "hanged-man"), 1);
+  assert.equal(fateChipValue(deck.find((card) => card.code === "AS"), "hanged-man"), 15);
+
+  const high = scorePlay(cards(["2S", "5H", "7D", "9C", "JS"]), null, { fateKind: "hanged-man" });
+  assert.equal(high.baseMultiplier, 6);
+  assert.equal(high.chips, 14);
+  assert.equal(high.score, 84);
+
+  const flush = scorePlay(cards(["2S", "5S", "7S", "9S", "JS"]), null, { fateKind: "hanged-man" });
+  assert.equal(flush.baseMultiplier, 6);
+});
+
+test("Persona can copy at most one revealed card in every round", () => {
+  assert.deepEqual([1, 2, 3, 4, 5].map(personaBorrowLimit), [1, 1, 1, 1, 1]);
+});
+
+test("American Psycho converts end-of-round standings into capped next-round bonuses", () => {
+  assert.deepEqual(americanPsychoNextRoundBonus(0, 3), {
+    higherTotalCount: 0,
+    higherRoundCount: 3,
+    chips: 15,
+    multiplier: 1
+  });
+  assert.equal(americanPsychoNextRoundBonus(3, 2).multiplier, 3);
+  assert.equal(americanPsychoNextRoundBonus(7, 1).multiplier, 3);
+  assert.equal(americanPsychoSettledRoundScore(101, 0, 0), 70);
+  assert.equal(americanPsychoSettledRoundScore(101, 0, 1), 101);
+
+  const result = scorePlay(cards(["2S", "5H", "7D", "9C", "JS"]), null, {
+    americanPsychoBonus: americanPsychoNextRoundBonus(4, 2)
+  });
+  assert.equal(result.chips, 28);
+  assert.equal(result.multiplier, 4);
+  assert.equal(result.score, 112);
+
+  const giantAbove = americanPsychoSettlementPlan([
+    { seatId: "psycho", totalScore: 3500, roundScore: 200 },
+    { seatId: "giant", totalScore: 3600, roundScore: 100 }
+  ], "psycho");
+  assert.equal(giantAbove.higherTotalCount, 1);
+  assert.equal(giantAbove.higherRoundCount, 0);
+  assert.equal(giantAbove.scoreReduction, 0);
+
+  const recomputed = americanPsychoSettlementPlan([
+    { seatId: "psycho", totalScore: 3700, roundScore: 1000 },
+    { seatId: "giant", totalScore: 3600, roundScore: 900 },
+    { seatId: "other", totalScore: 3500, roundScore: 800 }
+  ], "psycho");
+  assert.equal(recomputed.scoreReduction, 300);
+  assert.equal(recomputed.settledRoundScore, 700);
+  assert.equal(recomputed.higherTotalCount, 2);
+  assert.equal(recomputed.higherRoundCount, 2);
+  assert.deepEqual(recomputed.nextRoundBonus, {
+    higherTotalCount: 2,
+    higherRoundCount: 2,
+    chips: 10,
+    multiplier: 2
+  });
+});
+
+test("American Psycho Assassination qualification requires both scores to be strictly higher", () => {
+  const seats = [
+    { seatId: "psycho", totalScore: 500, roundScore: 100 },
+    { seatId: "both", totalScore: 501, roundScore: 101 },
+    { seatId: "total-only", totalScore: 600, roundScore: 90 },
+    { seatId: "round-only", totalScore: 400, roundScore: 120 },
+    { seatId: "ties", totalScore: 500, roundScore: 100 }
+  ];
+  assert.deepEqual(americanPsychoQualifyingTargetSeatIds(seats, "psycho"), ["both"]);
+});
+
+test("American Psycho cannot assassinate the same target twice", () => {
+  const seats = [{ seatId: "psycho" }, { seatId: "first" }, { seatId: "second" }];
+  const progress = { first: 4, second: 3 };
+  assert.deepEqual(
+    americanPsychoAssassinationEligibleSeatIds(seats, "psycho", progress, ["first"]),
+    ["second"]
+  );
+  assert.deepEqual(
+    americanPsychoAssassinationEligibleSeatIds(seats, "psycho", progress, ["first", "second"]),
+    []
+  );
+});
+
+test("American Psycho cannot target a player whose Assassination was escaped", () => {
+  const seats = [{ seatId: "psycho" }, { seatId: "escaped" }, { seatId: "available" }];
+  const progress = { escaped: 4, available: 3 };
+  assert.deepEqual(
+    americanPsychoAssassinationEligibleSeatIds(seats, "psycho", progress, ["escaped"]),
+    ["available"]
+  );
+});
+
+test("score battle loss endings stack without replacing Fate-specific endings", () => {
+  assert.deepEqual(scoreLossEndingIds({
+    fateKind: "american-psycho",
+    totalScore: 0,
+    giantReducedToZero: true,
+    assassinationDamageTaken: 250,
+    tomatoEffectChosen: true,
+    royalVictory: true
+  }), [
+    "giant-zero-release",
+    "assassinated-by-american-psycho",
+    "greenhouse-tomatoes",
+    "american-psycho-paul-allen",
+    "royal-flush-someone-cheated"
+  ]);
+
+  assert.deepEqual(scoreLossEndingIds({
+    fateKind: "giant",
+    totalScore: 0,
+    giantReducedToZero: true
+  }), ["giant-david"]);
+});
+
+test("every requested losing FATE has its own ending", () => {
+  assert.deepEqual([
+    "hanged-man",
+    "persona",
+    "american-psycho",
+    "clod",
+    "dice",
+    "fate-collector",
+    "big-short",
+    "going-long"
+  ].map((fateKind) => scoreLossEndingIds({ fateKind })[0]), [
+    "hanged-man-health",
+    "persona-miss",
+    "american-psycho-paul-allen",
+    "clod-chocolate",
+    "dice-probability",
+    "collector-loss",
+    "big-short-kurumi",
+    "going-long-kurumi"
+  ]);
+});
+
+test("winning endings stack FATE, escape, tomato, and Royal Flush rules", () => {
+  assert.deepEqual(scoreEndingIds({
+    won: true,
+    fateKind: "giant",
+    escapedAssassination: true,
+    tomatoEffectChosen: true
+  }), ["escaped-american-psycho", "giant-small-step", "tomato-god"]);
+
+  assert.deepEqual(scoreEndingIds({
+    won: true,
+    fateKind: "persona",
+    tomatoEffectChosen: true,
+    wonByRoyalFlush: true,
+    gameEndedByRoyalFlush: true
+  }), ["persona-own-cards", "royal-flush-exodia"]);
+
+  assert.deepEqual(scoreEndingIds({
+    won: false,
+    fateKind: "dice",
+    escapedAssassination: true,
+    gameEndedByRoyalFlush: true
+  }), ["escaped-american-psycho", "dice-probability", "royal-flush-someone-cheated"]);
+});
+
+test("Persona copy marks halve the original physical card's base chips", () => {
+  const high = cards(["2S", "5H", "7D", "9C", "AS"]);
+  const normal = scorePlay(high);
+  high.find((card) => card.code === "AS").personaWeakened = true;
+  const weakened = scorePlay(high);
+  const ace = weakened.cardValues.find((entry) => entry.code === "AS");
+
+  assert.equal(normal.chips, 22);
+  assert.equal(ace.printedChips, 7.5);
+  assert.equal(ace.bonuses.some((bonus) => bonus.kind === "persona-card-penalty" && bonus.factor === 0.5), true);
+  assert.equal(weakened.chips, 14.5);
+  assert.equal(weakened.score, 14);
+});
+
+test("Weakened reduces the complete hand result to 75% for one scoring context", () => {
+  const high = cards(["2S", "5H", "7D", "9C", "JS"]);
+  const normal = scorePlay(high, { kind: "shadow-swap", swappedChipDifference: 6 });
+  const weakened = scorePlay(high, { kind: "shadow-swap", swappedChipDifference: 6 }, { weaknessActive: true });
+  assert.equal(weakened.score, Math.floor(normal.score * 0.75));
+  assert.equal(weakened.finalScoreFactors.some((entry) => entry.kind === "weakness" && entry.factor === 0.75), true);
 });
 
 test("Giant Killer uses the reduced gap multipliers", () => {
@@ -294,14 +565,20 @@ test("FATE dice probabilities use the documented cumulative boundaries", () => {
   assert.equal(fateDiceValueForRoll(0.999999), 20);
 });
 
-test("The Giant FATE has no inherent multiplier bonus", () => {
+test("every x3 FATE roll immediately grants one Misfortune compensation roll", () => {
+  assert.equal(fateDiceMisfortuneExtraRolls(3), 1);
+  assert.equal(fateDiceMisfortuneExtraRolls(4), 0);
+  assert.equal(fateDiceMisfortuneExtraRolls(20), 0);
+});
+
+test("The Giant FATE adds an inherent multiplier", () => {
   const high = cards(["2S", "5H", "7D", "9C", "JS"]);
-  const result = scorePlay(high, null);
+  const result = scorePlay(high, null, { fateKind: "giant" });
   assert.equal(result.baseMultiplier, 1);
-  assert.equal(result.bonusMultiplier, 0);
-  assert.equal(result.multiplier, 1);
-  assert.equal(result.score, 18);
-  assert.deepEqual(result.multiplierBonuses, []);
+  assert.equal(result.bonusMultiplier, 1);
+  assert.equal(result.multiplier, 2);
+  assert.equal(result.score, 36);
+  assert.deepEqual(result.multiplierBonuses, [{ kind: "fate-giant", amount: 1 }]);
 });
 
 test("The Dice FATE compares both base multipliers after adding effect bonuses", () => {
@@ -312,7 +589,7 @@ test("The Dice FATE compares both base multipliers after adding effect bonuses",
   assert.equal(result.bonusMultiplier, 1);
   assert.equal(result.multiplierBeforeFateDice, 2);
   assert.equal(result.multiplier, 13);
-  assert.equal(result.score, 338);
+  assert.equal(result.score, 494);
 
   const changedStraight = scorePlay(cards(["AS", "2H", "3D", "4C", "5S"]), { kind: "change-straight" }, { fateDiceMultiplier: 6 });
   assert.equal(changedStraight.naturalBaseMultiplier, 5);

@@ -4,6 +4,7 @@ const path = require("path");
 const crypto = require("crypto");
 const os = require("os");
 const scoreBattle = require("./score-battle-engine");
+const profileStats = require("./profile-stats");
 
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, "public");
@@ -14,7 +15,7 @@ const USERS_FILE = path.join(DATA_DIR, "users.json");
 const SESSIONS_FILE = path.join(DATA_DIR, "sessions.json");
 const FEEDBACK_FILE = path.join(DATA_DIR, "feedback.json");
 const CONTROL_FILE = path.join(DATA_DIR, "server-control.json");
-const APP_VERSION = "0.0.8";
+const APP_VERSION = "0.0.9";
 
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || "0.0.0.0";
@@ -39,8 +40,8 @@ const UNSTARTED_TABLE_TTL_MS = 5 * 60 * 1000;
 const SCORE_TABLE_IDLE_TTL_MS = 10 * 60 * 1000;
 const TABLE_PRUNE_INTERVAL_MS = 15 * 1000;
 const TOMATO_EVENT_TTL_MS = 8 * 1000;
-const DEFAULT_TOMATO_ATTACK_SPEED = 1;
-const DANCE_ILLUSIONS_ATTACK_SPEED_BONUS = 0.65;
+const DEFAULT_TOMATO_ATTACK_SPEED = 0.7;
+const DANCE_ILLUSIONS_ATTACK_SPEED_BONUS = 1;
 const RUNAANS_HURRICANE_ATTACK_SPEED_BONUS = 0.4;
 const MIN_TOMATO_INTERVAL_MS = 200;
 const SCORE_BATTLE_MAX_SEATS = 6;
@@ -71,24 +72,29 @@ const SCORE_BATTLE_ONCE_PER_GAME_EFFECTS = new Set([
   "critical-switch-hand",
   "dance-illusions"
 ]);
+const SCORE_BATTLE_TOMATO_ENDING_EFFECTS = new Set([
+  "protoceratops",
+  "tomato-king",
+  "tomato-shooter",
+  "old-days-tomatoes",
+  "tempered-tomato"
+]);
 const SCORE_BATTLE_FATES = [
   { kind: "giant", name: "The Giant" },
   { kind: "dice", name: "The Dice" },
   { kind: "big-short", name: "The Big Short" },
   { kind: "going-long", name: "Going Long" },
   { kind: "fate-collector", name: "The Collector" },
-  { kind: "clod", name: "The Clod" }
+  { kind: "clod", name: "The Clod" },
+  { kind: "hanged-man", name: "The Hanged Man" },
+  { kind: "persona", name: "Persona" },
+  { kind: "american-psycho", name: "American Psycho" }
 ];
-const SCORE_BATTLE_GIANT_STARTING_SCORE = 3300;
-const SCORE_BATTLE_DICE_EFFECTS = new Set([
-  "void-erosion",
-  "refresher-orb",
-  "world-mirror",
-  "man-mirror",
-  "goelia",
-  "shadow-targeting",
-  "chaos-dice"
-]);
+const SCORE_BATTLE_FATE_OPTION_COUNT = 3;
+const SCORE_BATTLE_PERSONA_LIMIT = 2;
+const SCORE_BATTLE_AMERICAN_PSYCHO_ASSASSINATION_THRESHOLD = 3;
+const SCORE_BATTLE_AMERICAN_PSYCHO_ASSASSINATION_LIMIT = 2;
+const SCORE_BATTLE_GIANT_STARTING_SCORE = 3500;
 const SCORE_BATTLE_FATE_PREDICTION_BONUSES = [0, 50, 100, 150, 200, 300];
 const SCORE_BATTLE_BIG_SHORT_MISS_PENALTIES = [0, 50, 80, 80, 80, 80];
 const SCORE_BATTLE_CLOD_HAND_SIZES = [0, 4, 5, 6, 6, 6];
@@ -454,6 +460,14 @@ async function handleApi(req, res, url, method) {
     return;
   }
 
+  if (method === "GET" && url.pathname === "/api/players") {
+    const players = userDb.users
+      .map(playerListEntryForClient)
+      .sort((left, right) => left.username.localeCompare(right.username, undefined, { sensitivity: "base" }));
+    sendJson(res, 200, { players });
+    return;
+  }
+
   if (method === "GET" && url.pathname === "/api/profile/avatar-presets") {
     sendJson(res, 200, { presets: avatarPresetsForClient() });
     return;
@@ -660,6 +674,27 @@ async function handleApi(req, res, url, method) {
     if (method === "POST" && pathParts[3] === "fate-target") {
       const body = await readJsonBody(req);
       const result = chooseScoreFateTarget(table, user.id, body.targetSeatId);
+      if (!result.ok) {
+        sendJson(res, 400, { error: result.error });
+        return;
+      }
+      sendJson(res, 200, { table: scoreTableView(table, user) });
+      return;
+    }
+
+    if (method === "POST" && pathParts[3] === "fate-assassination-target") {
+      const body = await readJsonBody(req);
+      const result = chooseScoreAmericanPsychoAssassinationTarget(table, user.id, body.targetSeatId);
+      if (!result.ok) {
+        sendJson(res, 400, { error: result.error });
+        return;
+      }
+      sendJson(res, 200, { table: scoreTableView(table, user) });
+      return;
+    }
+
+    if (method === "POST" && pathParts[3] === "fate-escape") {
+      const result = toggleScoreAmericanPsychoEscape(table, user.id);
       if (!result.ok) {
         sendJson(res, 400, { error: result.error });
         return;
@@ -1108,6 +1143,7 @@ function profileForClient(user) {
       lastPoints: Number(user.stats.lastPoints) || 0,
       lastStars: Number(user.stats.lastStars) || 0
     },
+    scoreBattle: scoreBattleCareerForClient(user),
     history: user.history.slice(0, MAX_HISTORY_ENTRIES).map((entry) => ({
       id: entry.id,
       type: entry.type || "holdem",
@@ -1120,12 +1156,45 @@ function profileForClient(user) {
       stars: Number(entry.stars) || 0,
       rank: Number(entry.rank) || 0,
       totalScore: Number(entry.totalScore) || 0,
+      fateKind: String(entry.fateKind || ""),
+      fateName: String(entry.fateName || ""),
       standings: Array.isArray(entry.standings) ? entry.standings.map((standing) => ({
         rank: Number(standing.rank) || 0,
         displayName: String(standing.displayName || ""),
         totalScore: Number(standing.totalScore) || 0
       })) : []
     }))
+  };
+}
+
+function scoreBattleCareerForClient(user) {
+  ensureUserProfile(user);
+  const games = Number(user.stats.scoreBattleGames) || 0;
+  const wins = Number(user.stats.scoreBattleWins) || 0;
+  const fateKind = profileStats.favoriteFateKind(
+    user.stats.scoreBattleFateCounts,
+    SCORE_BATTLE_FATES.map((fate) => fate.kind)
+  );
+  const fate = SCORE_BATTLE_FATES.find((entry) => entry.kind === fateKind);
+  return {
+    games,
+    wins,
+    winRate: profileStats.scoreBattleWinRate(games, wins),
+    favoriteFate: fateKind ? {
+      kind: fateKind,
+      name: fate?.name || fateKind,
+      count: Number(user.stats.scoreBattleFateCounts[fateKind]) || 0
+    } : null
+  };
+}
+
+function playerListEntryForClient(user) {
+  ensureUserProfile(user);
+  return {
+    id: user.id,
+    username: user.username,
+    avatar: user.avatar || "",
+    scoreBattle: scoreBattleCareerForClient(user)
   };
 }
 
@@ -1991,6 +2060,7 @@ function createScoreTable(rawName, user) {
     scoreTomatoHits: [],
     historyRecorded: false,
     giantFateSeatId: null,
+    americanPsychoFateSeatId: null,
     royalVictorySuits: [],
     royalVictory: null,
     results: [],
@@ -2044,6 +2114,8 @@ function createScoreSeatState(options) {
     persistentEffects: {},
     fateOptions: [],
     fate: null,
+    fatePublicKind: "",
+    fatePublicName: "",
     fateChosen: false,
     fateDiceCount: 0,
     fateDiceRolls: [],
@@ -2057,6 +2129,19 @@ function createScoreSeatState(options) {
     fateGiantDefenseRound: 0,
     fateLastGiantPenalty: 0,
     fateGiantDamageDealt: 0,
+    americanPsychoBonusRound: 0,
+    americanPsychoBonus: null,
+    americanPsychoAssassinationProgress: Object.create(null),
+    americanPsychoAssassinatedSeatIds: [],
+    americanPsychoEscapedSeatIds: [],
+    americanPsychoAssassinationTargetSeatId: null,
+    americanPsychoAssassinationDamageTaken: 0,
+    americanPsychoEscapeRound: 0,
+    americanPsychoEscapeUsed: false,
+    americanPsychoEscapedAssassination: false,
+    giantReducedToZeroThisGame: false,
+    tomatoEndingEffectChosen: false,
+    weaknessRound: 0,
     lastGiantDeduction: 0,
     lastGiantDeductionRound: 0,
     submitted: false,
@@ -2187,6 +2272,7 @@ function startScoreBattle(table) {
   table.scoreTomatoHits = [];
   table.historyRecorded = false;
   table.giantFateSeatId = null;
+  table.americanPsychoFateSeatId = null;
   table.royalVictorySuits = scoreBattle.shuffle(scoreBattle.SUITS).slice(0, 1);
   table.royalVictory = null;
   table.standings = [];
@@ -2206,6 +2292,8 @@ function startScoreBattle(table) {
     seat.persistentEffects = {};
     seat.fateOptions = [];
     seat.fate = null;
+    seat.fatePublicKind = "";
+    seat.fatePublicName = "";
     seat.fateChosen = false;
     seat.fateDiceCount = 0;
     seat.fateDiceRolls = [];
@@ -2219,6 +2307,19 @@ function startScoreBattle(table) {
     seat.fateGiantDefenseRound = 0;
     seat.fateLastGiantPenalty = 0;
     seat.fateGiantDamageDealt = 0;
+    seat.americanPsychoBonusRound = 0;
+    seat.americanPsychoBonus = null;
+    seat.americanPsychoAssassinationProgress = Object.create(null);
+    seat.americanPsychoAssassinatedSeatIds = [];
+    seat.americanPsychoEscapedSeatIds = [];
+    seat.americanPsychoAssassinationTargetSeatId = null;
+    seat.americanPsychoAssassinationDamageTaken = 0;
+    seat.americanPsychoEscapeRound = 0;
+    seat.americanPsychoEscapeUsed = false;
+    seat.americanPsychoEscapedAssassination = false;
+    seat.giantReducedToZeroThisGame = false;
+    seat.tomatoEndingEffectChosen = false;
+    seat.weaknessRound = 0;
     seat.lastGiantDeduction = 0;
     seat.lastGiantDeductionRound = 0;
     seat.submitted = false;
@@ -2263,12 +2364,15 @@ function beginScoreBattleRound(table) {
     seat.lastResult = null;
     seat.fateOptions = [];
     seat.fateTargetSeatId = null;
+    seat.americanPsychoAssassinationTargetSeatId = null;
+    seat.americanPsychoEscapeRound = 0;
     seat.fateLastPredictionCorrect = null;
     seat.fateLastGiantPenalty = 0;
     resetScoreFateDiceRound(seat);
-    seat.effectOptions = table.round >= 2 && seat.fate?.kind !== "giant" && !seat.persistentEffects?.returningFundamentals
+    const effectOptions = table.round >= 2 && seat.fate?.kind !== "giant" && !seat.persistentEffects?.returningFundamentals
       ? scoreBattle.createEffectOptions({ excludedKinds: seat.usedEffectKinds || [], round: table.round })
       : [];
+    seat.effectOptions = effectOptions;
   }
   table.results = [];
   table.roundEffects = [];
@@ -2283,6 +2387,9 @@ function scoreRoundHandSize(round) {
 }
 
 function scoreHandSizeForSeat(table, seat) {
+  if (seat?.fate?.kind === "giant") {
+    return scoreBattle.giantHandSize(table.round);
+  }
   if (seat?.fate?.kind === "clod") {
     return SCORE_BATTLE_CLOD_HAND_SIZES[Math.max(1, Math.min(SCORE_BATTLE_ROUNDS, Number(table.round) || 1))];
   }
@@ -2399,9 +2506,13 @@ function scoreCardChipValue(card) {
 
 function applyGoeliaEffect(seat) {
   const highRanks = scoreBattle.shuffle([8, 9, 10, 11, 12, 13]);
+  let rankDifferenceTotal = 0;
   seat.hand.forEach((card, index) => {
-    card.rank = highRanks[index % highRanks.length];
+    const nextRank = highRanks[index % highRanks.length];
+    rankDifferenceTotal += Math.abs(scoreCardChipValue(card) - scoreCardChipValue({ ...card, rank: nextRank }));
+    card.rank = nextRank;
   });
+  return rankDifferenceTotal;
 }
 
 function scoreEffectLogName(effect) {
@@ -2447,10 +2558,19 @@ function scoreEffectLogName(effect) {
   return names[effect.kind] || effect.kind;
 }
 
+function scoreFateSelectionCount(table, fateKind) {
+  return activeScoreSeats(table).filter((seat) => seat.fateChosen && seat.fate?.kind === fateKind).length;
+}
+
 function ensureScoreFateOptions(table, seat) {
   if (!seat || table.round !== 1 || seat.fateChosen || (seat.fateOptions || []).length) return;
-  const available = SCORE_BATTLE_FATES.filter((fate) => fate.kind !== "giant" || !table.giantFateSeatId);
-  seat.fateOptions = scoreBattle.shuffle(available).slice(0, 2).map((fate) => ({
+  const available = SCORE_BATTLE_FATES.filter((fate) => {
+    if (fate.kind === "giant") return !table.giantFateSeatId;
+    if (fate.kind === "american-psycho") return !table.americanPsychoFateSeatId;
+    if (fate.kind === "persona") return scoreFateSelectionCount(table, "persona") < SCORE_BATTLE_PERSONA_LIMIT;
+    return true;
+  });
+  seat.fateOptions = scoreBattle.shuffle(available).slice(0, SCORE_BATTLE_FATE_OPTION_COUNT).map((fate) => ({
     ...fate,
     id: crypto.randomBytes(6).toString("hex")
   }));
@@ -2473,25 +2593,43 @@ function chooseScoreFateForSeat(table, seat, fateId) {
   if (seat.fateChosen) return { ok: false, error: "You already chose your FATE." };
   ensureScoreFateOptions(table, seat);
   const fate = (seat.fateOptions || []).find((entry) => entry.id === String(fateId || ""));
-  if (!fate) return { ok: false, error: "Choose one of your two FATE cards." };
+  if (!fate) return { ok: false, error: "Choose one of your three FATE cards." };
   if (fate.kind === "giant" && table.giantFateSeatId && table.giantFateSeatId !== seat.seatId) {
     return { ok: false, error: "Another player has already chosen The Giant." };
   }
+  if (
+    fate.kind === "american-psycho"
+    && table.americanPsychoFateSeatId
+    && table.americanPsychoFateSeatId !== seat.seatId
+  ) {
+    return { ok: false, error: "Another player has already chosen American Psycho." };
+  }
+  if (fate.kind === "persona" && scoreFateSelectionCount(table, "persona") >= SCORE_BATTLE_PERSONA_LIMIT) {
+    return { ok: false, error: "Two players have already chosen Persona." };
+  }
 
   seat.fate = { kind: fate.kind, name: fate.name };
+  const publicFate = fate.kind === "american-psycho"
+    ? scoreBattle.shuffle(SCORE_BATTLE_FATES.filter((entry) => !["giant", "american-psycho"].includes(entry.kind)))[0]
+    : fate;
+  seat.fatePublicKind = publicFate?.kind || fate.kind;
+  seat.fatePublicName = publicFate?.name || fate.name;
   seat.fateChosen = true;
   seat.fateOptions = [];
   seat.discardUsesLeft = scoreBattle.fateStartingDiscardUses(fate.kind, SCORE_BATTLE_DISCARD_USES);
   if (fate.kind === "giant") {
     table.giantFateSeatId = seat.seatId;
     seat.totalScore += SCORE_BATTLE_GIANT_STARTING_SCORE;
+    topUpScoreHand(table, seat, scoreBattle.giantHandSize(1));
+  } else if (fate.kind === "american-psycho") {
+    table.americanPsychoFateSeatId = seat.seatId;
   } else if (fate.kind === "dice") {
     seat.fateDiceCount = 1;
     resetScoreFateDiceRound(seat);
   } else if (fate.kind === "clod") {
     topUpScoreHand(table, seat, SCORE_BATTLE_CLOD_HAND_SIZES[1]);
   }
-  table.messages.unshift(`${seat.displayName} chose FATE: ${fate.name}.`);
+  table.messages.unshift(`${seat.displayName} chose FATE: ${seat.fatePublicName}.`);
   return { ok: true };
 }
 
@@ -2518,13 +2656,11 @@ function rollScoreFateDiceForSeat(table, seat) {
   seat.fateDiceRolls = Array.isArray(seat.fateDiceRolls) ? seat.fateDiceRolls : [];
   seat.fateDiceRolls.push(roll);
   seat.fateDiceValue = Math.max(Number(seat.fateDiceValue) || 0, roll);
-  if (roll === 3) {
-    seat.fateMisfortune = Math.max(0, Number(seat.fateMisfortune) || 0) + 1;
-    if (seat.fateMisfortune >= 3) {
-      seat.fateMisfortune -= 3;
-      seat.fateDiceRollsLeft += 1;
-      table.messages.unshift(`${seat.displayName}'s Misfortune granted one extra FATE roll.`);
-    }
+  const misfortuneExtraRolls = scoreBattle.fateDiceMisfortuneExtraRolls(roll);
+  if (misfortuneExtraRolls > 0) {
+    seat.fateMisfortune = Math.max(0, Number(seat.fateMisfortune) || 0) + misfortuneExtraRolls;
+    seat.fateDiceRollsLeft += misfortuneExtraRolls;
+    table.messages.unshift(`${seat.displayName}'s Misfortune granted one extra FATE roll.`);
   }
   table.messages.unshift(`${seat.displayName} rolled x${roll} with The Dice.`);
   return { ok: true, roll };
@@ -2551,6 +2687,61 @@ function chooseScoreFateTargetForSeat(table, seat, targetSeatId) {
 
 function scoreFateNeedsTarget(seat) {
   return ["big-short", "going-long"].includes(seat?.fate?.kind);
+}
+
+function americanPsychoAssassinationEligibleTargets(table, seat) {
+  if (seat?.fate?.kind !== "american-psycho") return [];
+  const active = activeScoreSeats(table);
+  const eligibleSeatIds = new Set(scoreBattle.americanPsychoAssassinationEligibleSeatIds(
+    active,
+    seat.seatId,
+    seat.americanPsychoAssassinationProgress,
+    americanPsychoResolvedTargetSeatIds(seat),
+    SCORE_BATTLE_AMERICAN_PSYCHO_ASSASSINATION_THRESHOLD,
+    SCORE_BATTLE_AMERICAN_PSYCHO_ASSASSINATION_LIMIT
+  ));
+  return active.filter((target) => eligibleSeatIds.has(target.seatId));
+}
+
+function americanPsychoResolvedTargetSeatIds(seat) {
+  return Array.from(new Set([
+    ...(Array.isArray(seat?.americanPsychoAssassinatedSeatIds) ? seat.americanPsychoAssassinatedSeatIds : []),
+    ...(Array.isArray(seat?.americanPsychoEscapedSeatIds) ? seat.americanPsychoEscapedSeatIds : [])
+  ].map(String)));
+}
+
+function chooseScoreAmericanPsychoAssassinationTarget(table, userId, targetSeatId) {
+  const seat = activeScoreSeats(table).find((entry) => !isScoreBotSeat(entry) && entry.userId === userId);
+  if (!seat) return { ok: false, error: "You are watching this score battle." };
+  return chooseScoreAmericanPsychoAssassinationTargetForSeat(table, seat, targetSeatId);
+}
+
+function chooseScoreAmericanPsychoAssassinationTargetForSeat(table, seat, targetSeatId) {
+  if (!isCurrentScoreTurn(table, seat)) return { ok: false, error: "Wait for your turn to choose an Assassination target." };
+  if (seat.fate?.kind !== "american-psycho") return { ok: false, error: "Only American Psycho can use Assassination." };
+  if (seat.submitted) return { ok: false, error: "Choose an Assassination target before playing." };
+  const requestedTargetSeatId = String(targetSeatId || "");
+  if (seat.americanPsychoAssassinationTargetSeatId === requestedTargetSeatId) {
+    seat.americanPsychoAssassinationTargetSeatId = null;
+    return { ok: true, selected: false };
+  }
+  const target = americanPsychoAssassinationEligibleTargets(table, seat)
+    .find((entry) => entry.seatId === requestedTargetSeatId);
+  if (!target) return { ok: false, error: "Choose an eligible Assassination target." };
+  seat.americanPsychoAssassinationTargetSeatId = target.seatId;
+  return { ok: true, selected: true };
+}
+
+function toggleScoreAmericanPsychoEscape(table, userId) {
+  const seat = activeScoreSeats(table).find((entry) => !isScoreBotSeat(entry) && entry.userId === userId);
+  if (!seat) return { ok: false, error: "You are watching this score battle." };
+  if (table.phase !== "play-select") return { ok: false, error: "Run Away can be toggled only before round settlement." };
+  if (!table.americanPsychoFateSeatId) return { ok: false, error: "There is no hidden threat in this game." };
+  if (seat.fate?.kind === "american-psycho") return { ok: false, error: "American Psycho cannot use Run Away." };
+  if (seat.americanPsychoEscapeUsed) return { ok: false, error: "Run Away was already used this game." };
+  const active = Number(seat.americanPsychoEscapeRound) === Number(table.round);
+  seat.americanPsychoEscapeRound = active ? 0 : table.round;
+  return { ok: true, active: !active };
 }
 
 function useScoreGiantDefense(table, userId) {
@@ -2612,6 +2803,13 @@ function prepareScoreFateForPlay(table, seat, options = {}) {
     if (!options.autoChooseTarget) return { ok: false, error: `Choose a player for ${seat.fate.name} before playing.` };
     chooseScoreAutomaticFateTarget(table, seat);
   }
+  if (
+    seat.fate?.kind === "american-psycho"
+    && options.autoChooseTarget
+    && !seat.americanPsychoAssassinationTargetSeatId
+  ) {
+    chooseScoreAutomaticAmericanPsychoAssassinationTarget(table, seat);
+  }
   if (seat.fate?.kind === "dice") {
     if (options.rollAllDice || !hasScoreFateDiceValue(seat)) {
       const rolled = rollRemainingScoreFateDice(table, seat);
@@ -2638,6 +2836,17 @@ function chooseScoreAutomaticFateTarget(table, seat) {
   chooseScoreFateTargetForSeat(table, seat, candidates[0].seatId);
 }
 
+function chooseScoreAutomaticAmericanPsychoAssassinationTarget(table, seat) {
+  const candidates = americanPsychoAssassinationEligibleTargets(table, seat)
+    .sort((left, right) => (
+      (Number(right.totalScore) || 0) - (Number(left.totalScore) || 0)
+      || (Number(right.roundScore) || 0) - (Number(left.roundScore) || 0)
+    ));
+  if (candidates.length) {
+    chooseScoreAmericanPsychoAssassinationTargetForSeat(table, seat, candidates[0].seatId);
+  }
+}
+
 function chooseScoreEffect(table, userId, effectId, payload = {}) {
   if (table.phase !== "play-select") return { ok: false, error: "Effects can only be selected while choosing a play." };
   const seat = activeScoreSeats(table).find((entry) => !isScoreBotSeat(entry) && entry.userId === userId);
@@ -2657,6 +2866,9 @@ function chooseScoreEffectForSeat(table, seat, effectId, payload = {}) {
   if (!applied.ok) return applied;
   seat.selectedEffect = applied.effect || effect;
   seat.effectChosen = true;
+  if (SCORE_BATTLE_TOMATO_ENDING_EFFECTS.has(effect.kind)) {
+    seat.tomatoEndingEffectChosen = true;
+  }
   if (SCORE_BATTLE_ONCE_PER_GAME_EFFECTS.has(effect.kind)) {
     seat.usedEffectKinds = Array.from(new Set([...(seat.usedEffectKinds || []), effect.kind]));
   }
@@ -2676,7 +2888,8 @@ function scoreEffectForSeat(table, seat) {
     effect.tomatoThrows = counts.throwsBeforeRound;
   }
   if (effect.kind === "old-days-tomatoes") {
-    effect.tomatoThrows = counts.throwsBeforeRound;
+    effect.tomatoThrows = counts.throwsTotal;
+    effect.tomatoHits = counts.hitsTotal;
   }
   if (effect.kind === "bite-me") {
     effect.discardMultiplier = Math.max(0, Number(seat.discardUsesLeft) || 0);
@@ -2703,12 +2916,18 @@ function scoreContextForSeat(table, seat, options = {}) {
     turnElapsedMs: options.turnElapsedMs ?? (Date.now() - (table.turnStartedAt || Date.now())),
     criticalExpected: Boolean(options.criticalExpected),
     criticalRolls: Array.isArray(options.criticalRolls) ? options.criticalRolls : [],
-    fateDiceMultiplier: seat.fate?.kind === "dice" ? seat.fateDiceValue : undefined
+    fateDiceMultiplier: seat.fate?.kind === "dice" ? seat.fateDiceValue : undefined,
+    fateKind: seat.fate?.kind || "",
+    americanPsychoBonus: seat.fate?.kind === "american-psycho"
+      && Number(seat.americanPsychoBonusRound) === Number(table.round)
+      ? seat.americanPsychoBonus
+      : null,
+    weaknessActive: Number(seat.weaknessRound) === Number(table.round)
   };
 }
 
 function grantScoreFateDieForEffect(table, seat, effectKind) {
-  if (seat?.fate?.kind !== "dice" || !SCORE_BATTLE_DICE_EFFECTS.has(effectKind)) return;
+  if (seat?.fate?.kind !== "dice" || !scoreBattle.effectAddsFateDie(effectKind)) return;
   seat.fateDiceCount = Math.max(1, Number(seat.fateDiceCount) || 1) + 1;
   seat.fateDiceRollsLeft = Math.max(0, Number(seat.fateDiceRollsLeft) || 0) + 1;
   table.messages.unshift(`${seat.displayName} gained one permanent FATE die from ${scoreEffectLogName({ kind: effectKind })}.`);
@@ -2800,12 +3019,17 @@ function applyScoreEffect(table, seat, effect, payload) {
     const community = firstCommunity || secondCommunity;
     if (!hand || !community) return { ok: false, error: "Choose one hand card and one community card." };
     const handCard = hand.card;
+    const swappedChipDifference = Math.abs(scoreCardChipValue(handCard) - scoreCardChipValue(community.card));
     seat.hand[hand.index] = { ...community.card, scoreDeckNumber: seat.scoreDeckNumber };
     rememberScoreDeckCards(seat, [seat.hand[hand.index]]);
     delete handCard.scoreDeckNumber;
+    delete handCard.personaWeakened;
     table.community[community.index] = handCard;
     table.messages.unshift(`${seat.displayName} swapped a hand card with the community board.`);
-    return { ok: true, effect: { ...effect, targetCodes: [hand.card.code, community.card.code] } };
+    return {
+      ok: true,
+      effect: { ...effect, targetCodes: [hand.card.code, community.card.code], swappedChipDifference }
+    };
   }
   if (effect.kind === "void-erosion") {
     if (cardCodes.length !== 1) return { ok: false, error: "Choose one community card for Void Erosion." };
@@ -2819,17 +3043,25 @@ function applyScoreEffect(table, seat, effect, payload) {
     return { ok: true, effect: { ...effect, targetCodes: cardCodes, followingUnplayedPlayers } };
   }
   if (effect.kind === "world-mirror") {
+    const mirrorChipDifference = table.community.reduce(
+      (sum, card) => sum + scoreBattle.mirrorRankDifference(card.rank),
+      0
+    );
     for (const card of table.community) mirrorScoreCard(card);
     table.messages.unshift(`${seat.displayName} mirrored the community board.`);
-    return { ok: true, effect };
+    return { ok: true, effect: { ...effect, mirrorChipDifference } };
   }
   if (effect.kind === "man-mirror") {
+    const mirrorChipDifference = seat.hand.reduce(
+      (sum, card) => sum + scoreBattle.mirrorRankDifference(card.rank),
+      0
+    );
     for (const card of seat.hand) mirrorScoreCard(card);
-    return { ok: true, effect };
+    return { ok: true, effect: { ...effect, mirrorChipDifference } };
   }
   if (effect.kind === "goelia") {
-    applyGoeliaEffect(seat);
-    return { ok: true, effect };
+    const rankDifferenceTotal = applyGoeliaEffect(seat);
+    return { ok: true, effect: { ...effect, rankDifferenceTotal } };
   }
   if (effect.kind === "shadow-targeting") {
     if (cardCodes.length !== 2) return { ok: false, error: "Choose two of your hand cards." };
@@ -3024,6 +3256,7 @@ function discardScoreCards(table, userId, rawCodes) {
   const cards = discardSlots.map((entry) => entry.card);
   if (cards.some((card) => !card)) return { ok: false, error: "You can only discard cards from your hand." };
 
+  clearPersonaWeakenedCards(cards);
   seat.discarded.push(...cards);
   seat.discardUsesLeft -= 1;
   const replacements = drawScoreCards(table, seat, cards.length, { ignoredHandCodes: codeSet });
@@ -3044,16 +3277,9 @@ function submitScorePlay(table, userId, rawCodes) {
   if (seat.submitted) return { ok: false, error: "You already submitted this round." };
   const fateReady = prepareScoreFateForPlay(table, seat);
   if (!fateReady.ok) return fateReady;
-  const codes = normalizeScoreCardCodes(rawCodes);
-  if (codes.length !== 5) return { ok: false, error: "Choose exactly five cards to play." };
-  const available = seat.hand.concat(table.community);
-  const cards = codes.map((code) => available.find((card) => card.code === code));
-  if (cards.some((card) => !card)) return { ok: false, error: "Choose cards from your hand or the current community." };
-  const communityCodes = new Set(table.community.map((card) => card.code));
-  if (!codes.some((code) => communityCodes.has(code))) {
-    return { ok: false, error: "Your play must include at least one community card." };
-  }
-  recordScorePlay(table, seat, cards, false);
+  const cardsResult = selectedScoreCards(table, seat, rawCodes);
+  if (!cardsResult.ok) return cardsResult;
+  recordScorePlay(table, seat, cardsResult.cards, false, cardsResult.entries);
   maybeAdvanceScoreBattle(table);
   return { ok: true };
 }
@@ -3067,11 +3293,16 @@ function submitBestScorePlay(table, userId) {
   const fateReady = prepareScoreFateForPlay(table, seat);
   if (!fateReady.ok) return fateReady;
   const scoringEffect = scoreEffectForSeat(table, seat);
-  const best = scoreBattle.findBestPlay(seat.hand, table.community, scoringEffect, {
+  const privateEntries = scorePrivatePlayEntries(table, seat);
+  const personaCards = new Set(privateEntries.filter((entry) => entry.source === "persona").map((entry) => entry.card));
+  const best = scoreBattle.findBestPlay(privateEntries.map((entry) => entry.card), table.community, scoringEffect, {
     ...scoreContextForSeat(table, seat, { criticalExpected: true }),
-    requireCommunity: true
+    requireCommunity: true,
+    validateSelection: (selection) => (
+      selection.filter((card) => personaCards.has(card)).length <= scoreBattle.personaBorrowLimit(table.round)
+    )
   });
-  recordScorePlay(table, seat, best.cards, "one-click");
+  recordScorePlay(table, seat, best.cards, "one-click", scoreSelectionEntriesForCards(table, seat, best.cards));
   maybeAdvanceScoreBattle(table);
   return { ok: true };
 }
@@ -3090,42 +3321,125 @@ function previewScorePlay(table, userId, rawCodes) {
   const result = scoreBattle.scorePlay(cardsResult.cards, scoringEffect, scoreContextForSeat(table, seat, { criticalExpected: true }));
   return {
     ok: true,
-    preview: scoreResultForClient(table, seat, cardsResult.cards, result, false, scoringEffect)
+    preview: scoreResultForClient(table, seat, cardsResult.cards, result, false, scoringEffect, cardsResult.entries)
   };
 }
 
 function selectedScoreCards(table, seat, rawCodes) {
   const codes = normalizeScoreCardCodes(rawCodes);
   if (codes.length !== 5) return { ok: false, error: "Choose exactly five cards to play." };
-  const available = seat.hand.concat(table.community);
-  const cards = codes.map((code) => available.find((card) => card.code === code));
-  if (cards.some((card) => !card)) return { ok: false, error: "Choose cards from your hand or the current community." };
-  const communityCodes = new Set(table.community.map((card) => card.code));
-  if (!codes.some((code) => communityCodes.has(code))) {
+  const personaEntries = scorePersonaBorrowEntries(table, seat);
+  const personaByToken = new Map(personaEntries.map((entry) => [entry.token, entry]));
+  const entries = codes.map((code) => {
+    const personaEntry = personaByToken.get(code);
+    if (personaEntry) return personaEntry;
+    const hand = seat.hand.find((card) => card.code === code);
+    if (hand) return { card: hand, source: "hand", token: code };
+    const community = table.community.find((card) => card.code === code);
+    if (community) return { card: community, source: "community", token: code };
+    return null;
+  });
+  if (entries.some((entry) => !entry)) {
+    return { ok: false, error: "Choose cards from your hand, Persona reveals, or the current community." };
+  }
+  const borrowedCount = entries.filter((entry) => entry.source === "persona").length;
+  if (borrowedCount > scoreBattle.personaBorrowLimit(table.round)) {
+    return { ok: false, error: "Persona cannot borrow that many cards this round." };
+  }
+  if (!entries.some((entry) => entry.source === "community")) {
     return { ok: false, error: "Your play must include at least one community card." };
   }
-  return { ok: true, codes, cards };
+  return { ok: true, codes, cards: entries.map((entry) => entry.card), entries };
 }
 
 function normalizeScoreCardCodes(rawCodes) {
   if (!Array.isArray(rawCodes)) return [];
-  const codes = rawCodes.map((code) => String(code || "").toUpperCase());
+  const codes = rawCodes.map((rawCode) => {
+    const code = String(rawCode || "").trim();
+    const persona = code.match(/^PERSONA:([A-F0-9]+):([2-9TJQKA][SHDC])$/i);
+    if (persona) return `PERSONA:${persona[1].toLowerCase()}:${persona[2].toUpperCase()}`;
+    return code.toUpperCase();
+  });
   return Array.from(new Set(codes));
 }
 
-function recordScorePlay(table, seat, cards, automatic) {
+function personaCardToken(ownerSeatId, cardCode) {
+  return `PERSONA:${String(ownerSeatId || "").toLowerCase()}:${String(cardCode || "").toUpperCase()}`;
+}
+
+function markPersonaWeakenedCard(card) {
+  if (!card) return;
+  card.personaWeakened = true;
+}
+
+function clearPersonaWeakenedCards(cards) {
+  for (const card of Array.isArray(cards) ? cards : []) {
+    if (card) delete card.personaWeakened;
+  }
+}
+
+function scoreHighestRemainingCard(seat) {
+  return (seat?.hand || []).slice().sort((left, right) => (
+    scoreCardChipValue(right) - scoreCardChipValue(left)
+    || String(right.code).localeCompare(String(left.code))
+  ))[0] || null;
+}
+
+function scorePersonaBorrowEntries(table, seat) {
+  if (seat?.fate?.kind !== "persona") return [];
+  return activeScoreSeats(table)
+    .filter((ownerSeat) => ownerSeat.seatId !== seat.seatId)
+    .map((ownerSeat) => {
+      const card = scoreHighestRemainingCard(ownerSeat);
+      return card ? {
+        card,
+        source: "persona",
+        ownerSeat,
+        token: personaCardToken(ownerSeat.seatId, card.code)
+      } : null;
+    })
+    .filter(Boolean);
+}
+
+function scorePrivatePlayEntries(table, seat) {
+  return (seat.hand || []).map((card) => ({ card, source: "hand", token: card.code }))
+    .concat(scorePersonaBorrowEntries(table, seat));
+}
+
+function scoreSelectionEntriesForCards(table, seat, cards) {
+  const privateEntries = scorePrivatePlayEntries(table, seat);
+  return cards.map((card) => {
+    const privateEntry = privateEntries.find((entry) => entry.card === card);
+    if (privateEntry) return privateEntry;
+    return { card, source: "community", token: card.code };
+  });
+}
+
+function recordScorePlay(table, seat, cards, automatic, selectionEntries = []) {
+  const entries = selectionEntries.length === cards.length
+    ? selectionEntries
+    : scoreSelectionEntriesForCards(table, seat, cards);
   const scoringEffect = scoreEffectForSeat(table, seat);
   const result = scoreBattle.scorePlay(cards, scoringEffect, scoreContextForSeat(table, seat, {
     criticalRolls: scoreCriticalRollsForSeat(seat, cards.length)
   }));
   applyScoreFateCollectorBonus(seat, result);
-  const handCodes = new Set(seat.hand.map((card) => card.code));
-  const playedHandCards = cards.filter((card) => handCodes.has(card.code));
-  seat.hand = seat.hand.filter((card) => !handCodes.has(card.code) || !playedHandCards.some((played) => played.code === card.code));
+  const playedHandCards = entries.filter((entry) => entry.source === "hand").map((entry) => entry.card);
+  const playedHandSet = new Set(playedHandCards);
+  seat.hand = seat.hand.filter((card) => !playedHandSet.has(card));
   seat.played.push(...playedHandCards);
+  clearPersonaWeakenedCards(playedHandCards);
+  const borrowedEntries = entries.filter((entry) => entry.source === "persona" && entry.ownerSeat);
+  for (const entry of borrowedEntries) {
+    markPersonaWeakenedCard(entry.card);
+    table.messages.unshift(
+      `${seat.displayName} copied ${scoreBattle.displayCode(entry.card)} from ${entry.ownerSeat.displayName} with Persona; the original now scores half chips.`
+    );
+  }
   seat.roundScore = result.score;
+  if (result.score > 0) seat.giantReducedToZeroThisGame = false;
   seat.totalScore += result.score;
-  seat.lastResult = scoreResultForClient(table, seat, cards, result, automatic, scoringEffect);
+  seat.lastResult = scoreResultForClient(table, seat, cards, result, automatic, scoringEffect, entries);
   applyScorePlayResourceBonuses(table, seat, result);
   seat.submitted = true;
   table.currentRoundLeaderSeatIds = scoreRoundLeaderSeatIds(table);
@@ -3166,8 +3480,7 @@ function applyScorePlayResourceBonuses(table, seat, result) {
   table.messages.unshift(`${seat.displayName} gained 1 discard use from Critical Switch Hand.`);
 }
 
-function scoreResultForClient(table, seat, cards, result, automatic, scoringEffect = seat.selectedEffect) {
-  const communityCodes = new Set(table.community.map((card) => card.code));
+function scoreResultForClient(table, seat, cards, result, automatic, scoringEffect = seat.selectedEffect, selectionEntries = []) {
   const valueByCode = new Map((result.cardValues || []).map((entry) => [entry.code, entry]));
   return {
     handId: result.handId,
@@ -3185,11 +3498,14 @@ function scoreResultForClient(table, seat, cards, result, automatic, scoringEffe
     score: result.score,
     chipTotalBeforeFactors: result.chipTotalBeforeFactors,
     chipFactors: result.chipFactors || [],
-    cards: cards.map((card) => {
+    cards: cards.map((card, index) => {
       const value = valueByCode.get(card.code) || {};
+      const selected = selectionEntries[index] || {};
       return {
         ...cardForClient(card),
-        source: communityCodes.has(card.code) ? "community" : "hand",
+        source: selected.source || (table.community.includes(card) ? "community" : "hand"),
+        ownerSeatId: selected.ownerSeat?.seatId || null,
+        ownerName: selected.ownerSeat?.displayName || "",
         scoresHand: value.scoresHand !== false
       };
     }),
@@ -3249,6 +3565,7 @@ function applyScorePostRoundBonuses(table) {
       if (seat.selectedEffect?.kind !== "draven" || !leaders.includes(seat.seatId)) continue;
       const bonus = Math.floor(maxTotal * (seat.selectedEffect.amount || 0.2));
       if (bonus <= 0) continue;
+      seat.giantReducedToZeroThisGame = false;
       seat.roundScore += bonus;
       seat.totalScore += bonus;
       if (seat.lastResult) {
@@ -3270,6 +3587,88 @@ function applyScorePostRoundBonuses(table) {
   }
 
   applyScoreGiantSettlement(table, settledHandScores);
+  prepareAmericanPsychoNextRoundBonus(table);
+}
+
+function prepareAmericanPsychoNextRoundBonus(table) {
+  const active = activeScoreSeats(table);
+  for (const target of active) {
+    if (Number(target.americanPsychoEscapeRound) === Number(table.round)) {
+      target.americanPsychoEscapeUsed = true;
+    }
+  }
+  for (const seat of active.filter((entry) => entry.fate?.kind === "american-psycho")) {
+    const plan = scoreBattle.americanPsychoSettlementPlan(active, seat.seatId);
+    if (!plan) continue;
+    if (plan.scoreReduction > 0) {
+      const reduction = plan.scoreReduction;
+      adjustScoreRoundScore(table, seat, -reduction, "american-psycho-penalty", seat.displayName);
+      if (reduction > 0) {
+        table.messages.unshift(`${seat.displayName}'s hidden FATE reduced this round's score to 70%.`);
+      }
+    }
+
+    const qualifyingTargetSeatIds = scoreBattle.americanPsychoQualifyingTargetSeatIds(active, seat.seatId);
+    const selectedTargetSeatId = String(seat.americanPsychoAssassinationTargetSeatId || "");
+    const eligibleTargetSeatIds = new Set(
+      americanPsychoAssassinationEligibleTargets(table, seat).map((target) => target.seatId)
+    );
+    if (selectedTargetSeatId && eligibleTargetSeatIds.has(selectedTargetSeatId)) {
+      const target = active.find((entry) => entry.seatId === selectedTargetSeatId);
+      if (target) {
+        const escaped = Number(target.americanPsychoEscapeRound) === Number(table.round);
+        if (escaped) {
+          seat.americanPsychoEscapedSeatIds = Array.from(new Set([
+            ...(seat.americanPsychoEscapedSeatIds || []),
+            target.seatId
+          ]));
+          target.americanPsychoEscapedAssassination = true;
+          table.messages.unshift(`${target.displayName} escaped a hidden FATE's Assassination.`);
+        } else {
+          const damage = Math.max(0, Number(seat.roundScore) || 0);
+          const deducted = Math.abs(adjustScoreRoundScore(table, target, -damage, "hidden-fate", "FATE"));
+          seat.americanPsychoAssassinatedSeatIds = Array.from(new Set([
+            ...(seat.americanPsychoAssassinatedSeatIds || []),
+            target.seatId
+          ]));
+          if (deducted > 0) {
+            target.americanPsychoAssassinationDamageTaken = Math.max(
+              0,
+              Number(target.americanPsychoAssassinationDamageTaken) || 0
+            ) + deducted;
+          }
+          table.messages.unshift(`A hidden FATE assassinated ${target.displayName} for ${deducted} points.`);
+        }
+      }
+    }
+    seat.americanPsychoAssassinationTargetSeatId = null;
+
+    seat.americanPsychoAssassinationProgress = seat.americanPsychoAssassinationProgress || Object.create(null);
+    const resolvedTargetSeatIds = new Set(americanPsychoResolvedTargetSeatIds(seat));
+    for (const targetSeatId of qualifyingTargetSeatIds) {
+      if (resolvedTargetSeatIds.has(targetSeatId)) continue;
+      seat.americanPsychoAssassinationProgress[targetSeatId] = Math.max(
+        0,
+        Number(seat.americanPsychoAssassinationProgress[targetSeatId]) || 0
+      ) + 1;
+    }
+
+    if (table.round >= SCORE_BATTLE_ROUNDS) {
+      seat.americanPsychoBonusRound = 0;
+      seat.americanPsychoBonus = null;
+      continue;
+    }
+    const counts = scoreBattle.americanPsychoStandingCounts(active, seat.seatId);
+    const assassinationBonus = Math.min(
+      SCORE_BATTLE_AMERICAN_PSYCHO_ASSASSINATION_LIMIT,
+      americanPsychoResolvedTargetSeatIds(seat).length
+    );
+    seat.americanPsychoBonusRound = table.round + 1;
+    seat.americanPsychoBonus = scoreBattle.americanPsychoNextRoundBonus(
+      counts.higherTotalCount + assassinationBonus,
+      counts.higherRoundCount + assassinationBonus
+    );
+  }
 }
 
 function applyScoreFatePredictionBonuses(table) {
@@ -3324,6 +3723,7 @@ function adjustScoreRoundScore(table, seat, amount, kind, sourceName) {
   if (!actual) return 0;
   seat.roundScore = next;
   seat.totalScore = Math.max(0, Math.floor((Number(seat.totalScore) || 0) + actual));
+  if (actual > 0) seat.giantReducedToZeroThisGame = false;
   if (seat.lastResult) {
     seat.lastResult.score = next;
     seat.lastResult.postRoundBonuses = seat.lastResult.postRoundBonuses || [];
@@ -3349,6 +3749,7 @@ function applyScoreGiantSettlement(table, settledHandScores) {
   const active = activeScoreSeats(table);
   const giant = active.find((seat) => seat.fate?.kind === "giant");
   if (!giant) return;
+  const totalsBeforeGiant = new Map(active.map((seat) => [seat.seatId, Math.max(0, Number(seat.totalScore) || 0)]));
   for (const seat of active) {
     seat.lastGiantDeduction = 0;
     seat.lastGiantDeductionRound = table.round;
@@ -3381,14 +3782,31 @@ function applyScoreGiantSettlement(table, settledHandScores) {
     }
   }
 
-  for (const seatId of plan.smashTargetSeatIds) {
-    const seat = seatsById.get(seatId);
-    if (!seat) continue;
-    const deducted = deductScoreTotal(seat, plan.smashPenalty, "giant-smash", giant.displayName);
-    seat.lastGiantDeduction += deducted;
-    giant.fateGiantDamageDealt = Math.max(0, Number(giant.fateGiantDamageDealt) || 0) + deducted;
-    if (deducted > 0) {
-      table.messages.unshift(`${seat.displayName} lost ${deducted} total points to ${giant.displayName}'s Smash.`);
+  const smashGroups = [
+    { seatIds: plan.smashTargetSeatIds, penalty: plan.smashPenalty, label: "Smash" },
+    { seatIds: plan.leaderSmashTargetSeatIds, penalty: plan.leaderSmashPenalty, label: "leader Smash" }
+  ];
+  for (const group of smashGroups) {
+    for (const seatId of group.seatIds) {
+      const seat = seatsById.get(seatId);
+      if (!seat) continue;
+      const deducted = deductScoreTotal(seat, group.penalty, "giant-smash", giant.displayName);
+      seat.lastGiantDeduction += deducted;
+      giant.fateGiantDamageDealt = Math.max(0, Number(giant.fateGiantDamageDealt) || 0) + deducted;
+      if (deducted > 0) {
+        table.messages.unshift(`${seat.displayName} lost ${deducted} total points to ${giant.displayName}'s ${group.label}.`);
+      }
+    }
+  }
+
+  for (const seat of active.filter((entry) => entry.seatId !== giant.seatId)) {
+    const startedAboveZero = (totalsBeforeGiant.get(seat.seatId) || 0) > 0;
+    if (startedAboveZero && seat.totalScore === 0 && seat.lastGiantDeduction > 0) {
+      seat.giantReducedToZeroThisGame = true;
+      if (table.round < SCORE_BATTLE_ROUNDS) {
+        seat.weaknessRound = table.round + 1;
+        table.messages.unshift(`${seat.displayName} was reduced to 0 by The Giant and will be Weakened next round.`);
+      }
     }
   }
 }
@@ -3426,11 +3844,16 @@ function playScoreBotTurn(table, seat) {
   });
   if (!fateReady.ok) throw new Error(fateReady.error);
   const scoringEffect = scoreEffectForSeat(table, seat);
-  const best = scoreBattle.findBestPlay(seat.hand, table.community, scoringEffect, {
+  const privateEntries = scorePrivatePlayEntries(table, seat);
+  const personaCards = new Set(privateEntries.filter((entry) => entry.source === "persona").map((entry) => entry.card));
+  const best = scoreBattle.findBestPlay(privateEntries.map((entry) => entry.card), table.community, scoringEffect, {
     ...scoreContextForSeat(table, seat, { criticalExpected: true }),
-    requireCommunity: true
+    requireCommunity: true,
+    validateSelection: (selection) => (
+      selection.filter((card) => personaCards.has(card)).length <= scoreBattle.personaBorrowLimit(table.round)
+    )
   });
-  recordScorePlay(table, seat, best.cards, "bot");
+  recordScorePlay(table, seat, best.cards, "bot", scoreSelectionEntriesForCards(table, seat, best.cards));
   maybeAdvanceScoreBattle(table);
 }
 
@@ -3613,11 +4036,16 @@ function processScoreBattleTimeouts() {
           continue;
         }
         const scoringEffect = scoreEffectForSeat(table, seat);
-        const best = scoreBattle.findBestPlay(seat.hand, table.community, scoringEffect, {
+        const privateEntries = scorePrivatePlayEntries(table, seat);
+        const personaCards = new Set(privateEntries.filter((entry) => entry.source === "persona").map((entry) => entry.card));
+        const best = scoreBattle.findBestPlay(privateEntries.map((entry) => entry.card), table.community, scoringEffect, {
           ...scoreContextForSeat(table, seat, { criticalExpected: true }),
           requireCommunity: true,
+          validateSelection: (selection) => (
+            selection.filter((card) => personaCards.has(card)).length <= scoreBattle.personaBorrowLimit(table.round)
+          )
         });
-        recordScorePlay(table, seat, best.cards, "timeout");
+        recordScorePlay(table, seat, best.cards, "timeout", scoreSelectionEntriesForCards(table, seat, best.cards));
       }
       maybeAdvanceScoreBattle(table);
       processScoreBots(table);
@@ -3740,6 +4168,9 @@ function recordScoreBattleHistory(table) {
     const user = userDb.users.find((entry) => entry.id === standing.userId);
     if (!user) continue;
     ensureUserProfile(user);
+    const seat = table.seats.find((entry) => entry.seatId === standing.seatId);
+    const fateKind = String(seat?.fate?.kind || "");
+    const fateName = String(seat?.fate?.name || "");
     user.history.unshift({
       id: crypto.randomBytes(8).toString("hex"),
       type: "score-battle",
@@ -3749,10 +4180,17 @@ function recordScoreBattleHistory(table) {
       leftAt: new Date().toISOString(),
       rank: standing.rank,
       totalScore: standing.totalScore,
+      fateKind,
+      fateName,
       standings
     });
     user.history = user.history.slice(0, MAX_HISTORY_ENTRIES);
     user.stats.sessionsPlayed = (Number(user.stats.sessionsPlayed) || 0) + 1;
+    user.stats.scoreBattleGames += 1;
+    if (Number(standing.rank) === 1) user.stats.scoreBattleWins += 1;
+    if (fateKind) {
+      user.stats.scoreBattleFateCounts[fateKind] = (Number(user.stats.scoreBattleFateCounts[fateKind]) || 0) + 1;
+    }
   }
   table.historyRecorded = true;
   writeUsers();
@@ -3950,6 +4388,7 @@ function scoreTableView(table, user) {
     currentRoundLeaderSeatIds: table.currentRoundLeaderSeatIds || [],
     previousRoundLeaderSeatIds: table.previousRoundLeaderSeatIds || [],
     royalVictorySuits: Array.isArray(table.royalVictorySuits) ? table.royalVictorySuits.slice(0, 1) : [],
+    americanPsychoPresent: Boolean(table.americanPsychoFateSeatId),
     roundEffects: (table.roundEffects || []).map((effect) => ({
       kind: effect.kind,
       suit: effect.suit,
@@ -3982,9 +4421,37 @@ function scoreTableView(table, user) {
 function scoreSeatForClient(table, seat, youSeat) {
   const isYou = seat.seatId === youSeat?.seatId;
   const isScoreTurn = isCurrentScoreTurn(table, seat);
+  const wonLastGame = Boolean(
+    (table.lastWinnerSeatIds || []).includes(seat.seatId)
+    && table.lastVictoryGameNumber === table.gameNumber
+  );
+  const gameEndedByRoyalFlush = Number(table.royalVictory?.gameNumber) === Number(table.gameNumber);
+  const wonByRoyalFlush = Boolean(gameEndedByRoyalFlush && table.royalVictory?.winnerSeatId === seat.seatId);
+  const endingIds = isYou && table.phase === "finished"
+    ? scoreBattle.scoreEndingIds({
+      won: wonLastGame,
+      fateKind: seat.fate?.kind,
+      totalScore: seat.totalScore,
+      giantReducedToZero: seat.giantReducedToZeroThisGame,
+      assassinationDamageTaken: seat.americanPsychoAssassinationDamageTaken,
+      escapedAssassination: seat.americanPsychoEscapedAssassination,
+      tomatoEffectChosen: seat.tomatoEndingEffectChosen,
+      gameEndedByRoyalFlush,
+      wonByRoyalFlush
+    })
+    : [];
   const tomatoCounts = scoreTomatoCountsForSeat(table, seat);
   const criticalProfile = scoreBattle.criticalProfileForEffects(seat.persistentEffects || {});
   const attackSpeedProfile = scoreAttackSpeedProfileForSeat(seat);
+  const personaVisibleCard = youSeat?.fate?.kind === "persona" && !isYou && seat.inGame && !seat.left
+    ? scoreHighestRemainingCard(seat)
+    : null;
+  const hideAmericanPsycho = seat.fate?.kind === "american-psycho" && !isYou;
+  const redactAmericanPsychoBonuses = (entries) => (Array.isArray(entries) ? entries : []).map((entry) => (
+    hideAmericanPsycho && String(entry?.kind || "").startsWith("american-psycho")
+      ? { ...entry, kind: "hidden-fate" }
+      : entry
+  ));
   const result = seat.lastResult ? {
     handId: seat.lastResult.handId,
     handName: seat.lastResult.handName,
@@ -4004,12 +4471,12 @@ function scoreSeatForClient(table, seat, youSeat) {
     automaticReason: seat.lastResult.automaticReason || "",
     effect: seat.lastResult.effect,
     cardValues: seat.lastResult.cardValues || [],
-    multiplierBonuses: seat.lastResult.multiplierBonuses || [],
-    globalChipBonuses: seat.lastResult.globalChipBonuses || [],
-    scoreBonuses: seat.lastResult.scoreBonuses || [],
+    multiplierBonuses: redactAmericanPsychoBonuses(seat.lastResult.multiplierBonuses),
+    globalChipBonuses: redactAmericanPsychoBonuses(seat.lastResult.globalChipBonuses),
+    scoreBonuses: redactAmericanPsychoBonuses(seat.lastResult.scoreBonuses),
     scoreFactors: seat.lastResult.scoreFactors || [],
     finalScoreFactors: seat.lastResult.finalScoreFactors || [],
-    postRoundBonuses: seat.lastResult.postRoundBonuses || [],
+    postRoundBonuses: redactAmericanPsychoBonuses(seat.lastResult.postRoundBonuses),
     cards: (seat.lastResult.cards || []).map((entry) => ({
       ...entry,
       source: entry.source
@@ -4028,14 +4495,22 @@ function scoreSeatForClient(table, seat, youSeat) {
     totalScore: seat.totalScore,
     lastGiantDeduction: Math.max(0, Number(seat.lastGiantDeduction) || 0),
     lastGiantDeductionRound: Math.max(0, Number(seat.lastGiantDeductionRound) || 0),
+    weaknessActive: Boolean(seat.inGame && Number(seat.weaknessRound) === Number(table.round)),
     tomatoCounts,
     persistentEffects: scorePersistentEffectsForClient(seat),
-    fate: scoreFateForClient(table, seat),
+    fate: scoreFateForClient(table, seat, isYou),
+    americanPsychoEscape: scoreAmericanPsychoEscapeForClient(table, seat, isYou),
     fateOptions: isYou && isScoreTurn && table.round === 1 && !seat.fateChosen ? (seat.fateOptions || []) : [],
     fateChosen: Boolean(seat.fateChosen),
     requiresFateChoice: Boolean(isYou && isScoreTurn && table.round === 1 && !seat.fateChosen),
     canRollFateDice: Boolean(isYou && isScoreTurn && seat.fate?.kind === "dice" && seat.fateDiceRollsLeft > 0),
     canChooseFateTarget: Boolean(isYou && isScoreTurn && scoreFateNeedsTarget(seat)),
+    canChooseAmericanPsychoAssassination: Boolean(
+      isYou
+      && isScoreTurn
+      && !seat.submitted
+      && americanPsychoAssassinationEligibleTargets(table, seat).length
+    ),
     canUseGiantDefense: Boolean(
       isYou
       && isScoreTurn
@@ -4049,13 +4524,25 @@ function scoreSeatForClient(table, seat, youSeat) {
     criticalProfile,
     attackSpeedProfile,
     winCount: Number(seat.winCount) || 0,
-    wonLastGame: Boolean((table.lastWinnerSeatIds || []).includes(seat.seatId) && table.lastVictoryGameNumber === table.gameNumber),
+    wonLastGame,
+    endingIds,
+    lossEndingIds: wonLastGame ? [] : endingIds,
     isScoreTurn,
     isCurrentRoundLeader: Boolean((table.currentRoundLeaderSeatIds || []).includes(seat.seatId)),
     isPreviousRoundLeader: Boolean((table.previousRoundLeaderSeatIds || []).includes(seat.seatId)),
     isYou,
     isHost: isScoreHumanSeat(seat) && seat.userId === table.createdBy,
-    hand: isYou && seat.inGame ? seat.hand.map(cardForClient) : [],
+    hand: isYou && seat.inGame ? seat.hand.map((card) => ({
+      ...cardForClient(card),
+      personaWeakened: Boolean(card.personaWeakened)
+    })) : [],
+    personaVisibleCard: personaVisibleCard ? {
+      ...cardForClient(personaVisibleCard),
+      personaWeakened: Boolean(personaVisibleCard.personaWeakened),
+      token: personaCardToken(seat.seatId, personaVisibleCard.code),
+      ownerSeatId: seat.seatId,
+      ownerName: seat.displayName
+    } : null,
     discardUsesLeft: isYou ? seat.discardUsesLeft : null,
     canDiscardThisRound: Boolean(isYou && isScoreTurn && seat.inGame && !seat.submitted && seat.discardUsesLeft > 0 && !scoreDiscardsBlocked(seat)),
     effectOptions: isYou && isScoreTurn && seat.inGame && !seat.submitted && !seat.effectChosen ? seat.effectOptions : [],
@@ -4065,12 +4552,33 @@ function scoreSeatForClient(table, seat, youSeat) {
   };
 }
 
-function scoreFateForClient(table, seat) {
+function scoreFateForClient(table, seat, isYou) {
   if (!seat?.fateChosen || !seat.fate) return null;
   const target = activeScoreSeats(table).find((entry) => entry.seatId === seat.fateTargetSeatId);
+  const assassinationTarget = activeScoreSeats(table)
+    .find((entry) => entry.seatId === seat.americanPsychoAssassinationTargetSeatId);
+  const assassinationProgress = isYou && seat.fate.kind === "american-psycho"
+    ? activeScoreSeats(table)
+      .filter((entry) => entry.seatId !== seat.seatId)
+      .map((entry) => ({
+        seatId: entry.seatId,
+        name: entry.displayName,
+        rounds: Math.max(0, Number(seat.americanPsychoAssassinationProgress?.[entry.seatId]) || 0),
+        used: americanPsychoResolvedTargetSeatIds(seat).includes(entry.seatId),
+        escaped: (seat.americanPsychoEscapedSeatIds || []).includes(entry.seatId)
+      }))
+    : [];
+  const assassinationEligibleTargets = isYou && seat.fate.kind === "american-psycho"
+    ? americanPsychoAssassinationEligibleTargets(table, seat).map((entry) => ({
+      seatId: entry.seatId,
+      name: entry.displayName
+    }))
+    : [];
+  const disguised = seat.fate.kind === "american-psycho" && !isYou;
   return {
-    kind: seat.fate.kind,
-    name: seat.fate.name,
+    kind: disguised ? (seat.fatePublicKind || "persona") : seat.fate.kind,
+    name: disguised ? (seat.fatePublicName || "Persona") : seat.fate.name,
+    disguised,
     diceCount: Math.max(0, Number(seat.fateDiceCount) || 0),
     diceRolls: (seat.fateDiceRolls || []).slice(),
     diceRollsLeft: Math.max(0, Number(seat.fateDiceRollsLeft) || 0),
@@ -4082,6 +4590,28 @@ function scoreFateForClient(table, seat) {
     lastPredictionCorrect: seat.fateLastPredictionCorrect ?? null,
     collectedHandCount: (seat.fateCollectedHandIds || []).length,
     collectedHandIds: (seat.fateCollectedHandIds || []).slice(),
+    personaBorrowLimit: seat.fate.kind === "persona" ? scoreBattle.personaBorrowLimit(table.round) : 0,
+    americanPsychoBonusRound: isYou && seat.fate.kind === "american-psycho"
+      ? Math.max(0, Number(seat.americanPsychoBonusRound) || 0)
+      : 0,
+    americanPsychoBonus: isYou && seat.fate.kind === "american-psycho" && seat.americanPsychoBonus
+      ? { ...seat.americanPsychoBonus }
+      : null,
+    assassinationProgress,
+    assassinationEligibleTargets,
+    assassinationTargetSeatId: isYou && seat.fate.kind === "american-psycho"
+      ? seat.americanPsychoAssassinationTargetSeatId || null
+      : null,
+    assassinationTargetName: isYou && seat.fate.kind === "american-psycho"
+      ? assassinationTarget?.displayName || ""
+      : "",
+    assassinationUses: isYou && seat.fate.kind === "american-psycho"
+      ? Math.min(
+        SCORE_BATTLE_AMERICAN_PSYCHO_ASSASSINATION_LIMIT,
+        americanPsychoResolvedTargetSeatIds(seat).length
+      )
+      : 0,
+    assassinationLimit: SCORE_BATTLE_AMERICAN_PSYCHO_ASSASSINATION_LIMIT,
     lastGiantPenalty: Math.max(0, Number(seat.fateLastGiantPenalty) || 0),
     damageDealt: Math.max(0, Number(seat.fateGiantDamageDealt) || 0),
     giantDefenseUsed: Boolean(seat.fateGiantDefenseUsed),
@@ -4089,6 +4619,18 @@ function scoreFateForClient(table, seat) {
     giantDefenseReduction: isScoreGiantDefenseActive(table, seat)
       ? scoreBattle.giantDefenseReduction(table.round)
       : 0
+  };
+}
+
+function scoreAmericanPsychoEscapeForClient(table, seat, isYou) {
+  if (!isYou || !seat?.inGame || !table.americanPsychoFateSeatId || seat.fate?.kind === "american-psycho") return null;
+  const active = Number(seat.americanPsychoEscapeRound) === Number(table.round);
+  return {
+    active,
+    used: Boolean(seat.americanPsychoEscapeUsed),
+    usedCount: seat.americanPsychoEscapeUsed || active ? 1 : 0,
+    limit: 1,
+    canToggle: Boolean(table.phase === "play-select" && !seat.americanPsychoEscapeUsed)
   };
 }
 
@@ -5011,7 +5553,10 @@ function blankUserStats() {
     bestPoints: STARTING_STACK,
     bestStars: 0,
     lastPoints: STARTING_STACK,
-    lastStars: 0
+    lastStars: 0,
+    scoreBattleGames: 0,
+    scoreBattleWins: 0,
+    scoreBattleFateCounts: {}
   };
 }
 
@@ -5028,6 +5573,7 @@ function ensureUserProfile(user) {
   user.stats.bestStars = Number(user.stats.bestStars) || 0;
   user.stats.lastPoints = Number.isFinite(Number(user.stats.lastPoints)) ? Number(user.stats.lastPoints) : STARTING_STACK;
   user.stats.lastStars = Number(user.stats.lastStars) || 0;
+  profileStats.ensureScoreBattleStats(user.stats, user.history);
 }
 
 function isSupportedAvatar(avatar) {

@@ -52,7 +52,48 @@ const FATE_STARTING_DISCARD_USES = new Map([
   ["big-short", 6],
   ["going-long", 6],
   ["fate-collector", 6],
-  ["clod", 6]
+  ["clod", 6],
+  ["hanged-man", 5],
+  ["persona", 3],
+  ["american-psycho", 5]
+]);
+const FATE_DICE_EFFECT_KINDS = new Set([
+  "shadow-swap",
+  "void-erosion",
+  "refresher-orb",
+  "world-mirror",
+  "man-mirror",
+  "goelia",
+  "shadow-targeting",
+  "chaos-dice"
+]);
+const HANGED_MAN_MULTIPLIER_HANDS = new Set([
+  "high-card",
+  "one-pair",
+  "two-pair",
+  "three-kind",
+  "straight"
+]);
+const SCORE_LOSS_FATE_ENDINGS = new Map([
+  ["hanged-man", "hanged-man-health"],
+  ["persona", "persona-miss"],
+  ["american-psycho", "american-psycho-paul-allen"],
+  ["clod", "clod-chocolate"],
+  ["dice", "dice-probability"],
+  ["fate-collector", "collector-loss"],
+  ["big-short", "big-short-kurumi"],
+  ["going-long", "going-long-kurumi"]
+]);
+const SCORE_WIN_FATE_ENDINGS = new Map([
+  ["giant", "giant-small-step"],
+  ["hanged-man", "hanged-man-win-health"],
+  ["persona", "persona-own-cards"],
+  ["american-psycho", "american-psycho-paul-axe"],
+  ["clod", "clod-west-germany"],
+  ["dice", "dice-probability-win"],
+  ["fate-collector", "collector-palace"],
+  ["big-short", "big-short-win-kurumi"],
+  ["going-long", "going-long-win-kurumi"]
 ]);
 
 function createDeck() {
@@ -76,6 +117,11 @@ function rankValue(rank) {
 
 function chipValue(card) {
   return card.rank === 14 ? 15 : card.rank;
+}
+
+function fateChipValue(card, fateKind) {
+  if (fateKind !== "hanged-man" || card.rank === 14) return chipValue(card);
+  return Math.max(0, 14 - card.rank);
 }
 
 function shuffle(cards) {
@@ -143,11 +189,15 @@ function giantFatePenalty(roundScores) {
 }
 
 function giantAoePenalty(giantHandScore) {
-  return Math.floor(Math.max(0, Number(giantHandScore) || 0) * 0.2);
+  return Math.floor(Math.max(0, Number(giantHandScore) || 0) * 0.3);
 }
 
 function giantSmashPenalty(giantHandScore) {
-  return Math.floor(Math.max(0, Number(giantHandScore) || 0) * 0.2);
+  return Math.floor(Math.max(0, Number(giantHandScore) || 0) * 0.3);
+}
+
+function giantLeaderSmashPenalty(giantHandScore) {
+  return Math.floor(Math.max(0, Number(giantHandScore) || 0) * 0.6);
 }
 
 function giantDefenseReduction(round) {
@@ -164,6 +214,9 @@ function giantSettlementPlan(seats, giantSeatId, giantHandScore) {
   const opponents = (Array.isArray(seats) ? seats : [])
     .filter((seat) => seat?.seatId && seat.seatId !== giantSeatId);
   const bareHandScore = Math.max(0, Number(giantHandScore) || 0);
+  const highestOpponentScore = opponents.length
+    ? Math.max(...opponents.map((seat) => Math.max(0, Number(seat.roundScore) || 0)))
+    : null;
   return {
     burdenPenalty: giantFatePenalty(opponents.map((seat) => seat.roundScore)),
     aoePenalty: giantAoePenalty(bareHandScore),
@@ -171,7 +224,13 @@ function giantSettlementPlan(seats, giantSeatId, giantHandScore) {
     smashPenalty: giantSmashPenalty(bareHandScore),
     smashTargetSeatIds: opponents
       .filter((seat) => (Number(seat.roundScore) || 0) < bareHandScore)
-      .map((seat) => seat.seatId)
+      .map((seat) => seat.seatId),
+    leaderSmashPenalty: giantLeaderSmashPenalty(bareHandScore),
+    leaderSmashTargetSeatIds: highestOpponentScore === null
+      ? []
+      : opponents
+        .filter((seat) => Math.max(0, Number(seat.roundScore) || 0) === highestOpponentScore)
+        .map((seat) => seat.seatId)
   };
 }
 
@@ -207,6 +266,170 @@ function fateStartingDiscardUses(fateKind, defaultUses = 4) {
   return FATE_STARTING_DISCARD_USES.get(String(fateKind || "")) || fallback;
 }
 
+function giantHandSize(round) {
+  const sizes = [0, 4, 5, 5, 5, 5];
+  const normalizedRound = Math.max(1, Math.min(5, Math.floor(Number(round) || 1)));
+  return sizes[normalizedRound];
+}
+
+function effectAddsFateDie(effectKind) {
+  return FATE_DICE_EFFECT_KINDS.has(String(effectKind || ""));
+}
+
+function personaBorrowLimit(round) {
+  const currentRound = Math.floor(Number(round) || 0);
+  return currentRound >= 1 && currentRound <= 5 ? 1 : 0;
+}
+
+function americanPsychoNextRoundBonus(higherTotalCount, higherRoundCount) {
+  const n = Math.max(0, Math.floor(Number(higherTotalCount) || 0));
+  const m = Math.max(0, Math.floor(Number(higherRoundCount) || 0));
+  return {
+    higherTotalCount: n,
+    higherRoundCount: m,
+    chips: m * 5,
+    multiplier: n <= 3 ? Math.max(1, n) : Math.min(3, n)
+  };
+}
+
+function americanPsychoSettledRoundScore(roundScore, higherTotalCount, higherRoundCount) {
+  const score = Math.max(0, Math.floor(Number(roundScore) || 0));
+  const n = Math.max(0, Math.floor(Number(higherTotalCount) || 0));
+  const m = Math.max(0, Math.floor(Number(higherRoundCount) || 0));
+  return n === 0 && m === 0 ? Math.floor(score * 0.7) : score;
+}
+
+function americanPsychoStandingCounts(seats, seatId) {
+  const normalized = (Array.isArray(seats) ? seats : [])
+    .filter((seat) => seat?.seatId)
+    .map((seat) => ({
+      seatId: String(seat.seatId),
+      totalScore: Math.max(0, Number(seat.totalScore) || 0),
+      roundScore: Math.max(0, Number(seat.roundScore) || 0)
+    }));
+  const subjectId = String(seatId || "");
+  const subject = normalized.find((seat) => seat.seatId === subjectId);
+  if (!subject) return { higherTotalCount: 0, higherRoundCount: 0 };
+  const opponents = normalized.filter((seat) => seat.seatId !== subjectId);
+  return {
+    higherTotalCount: opponents.filter((seat) => seat.totalScore > subject.totalScore).length,
+    higherRoundCount: opponents.filter((seat) => seat.roundScore > subject.roundScore).length
+  };
+}
+
+function americanPsychoQualifyingTargetSeatIds(seats, seatId) {
+  const normalized = (Array.isArray(seats) ? seats : [])
+    .filter((seat) => seat?.seatId)
+    .map((seat) => ({
+      seatId: String(seat.seatId),
+      totalScore: Math.max(0, Number(seat.totalScore) || 0),
+      roundScore: Math.max(0, Number(seat.roundScore) || 0)
+    }));
+  const subjectId = String(seatId || "");
+  const subject = normalized.find((seat) => seat.seatId === subjectId);
+  if (!subject) return [];
+  return normalized
+    .filter((seat) => (
+      seat.seatId !== subjectId
+      && seat.totalScore > subject.totalScore
+      && seat.roundScore > subject.roundScore
+    ))
+    .map((seat) => seat.seatId);
+}
+
+function americanPsychoAssassinationEligibleSeatIds(
+  seats,
+  seatId,
+  progress = {},
+  assassinatedSeatIds = [],
+  threshold = 3,
+  limit = 2
+) {
+  const subjectId = String(seatId || "");
+  const used = new Set((Array.isArray(assassinatedSeatIds) ? assassinatedSeatIds : []).map(String));
+  if (used.size >= Math.max(0, Math.floor(Number(limit) || 0))) return [];
+  const requiredRounds = Math.max(1, Math.floor(Number(threshold) || 1));
+  return (Array.isArray(seats) ? seats : [])
+    .filter((seat) => seat?.seatId)
+    .map((seat) => String(seat.seatId))
+    .filter((targetSeatId) => (
+      targetSeatId !== subjectId
+      && !used.has(targetSeatId)
+      && Math.max(0, Number(progress?.[targetSeatId]) || 0) >= requiredRounds
+    ));
+}
+
+function americanPsychoSettlementPlan(seats, seatId) {
+  const subjectId = String(seatId || "");
+  const normalized = (Array.isArray(seats) ? seats : [])
+    .filter((seat) => seat?.seatId)
+    .map((seat) => ({
+      seatId: String(seat.seatId),
+      totalScore: Math.max(0, Number(seat.totalScore) || 0),
+      roundScore: Math.max(0, Number(seat.roundScore) || 0)
+    }));
+  const subject = normalized.find((seat) => seat.seatId === subjectId);
+  if (!subject) return null;
+
+  const initialCounts = americanPsychoStandingCounts(normalized, subjectId);
+  const settledRoundScore = americanPsychoSettledRoundScore(
+    subject.roundScore,
+    initialCounts.higherTotalCount,
+    initialCounts.higherRoundCount
+  );
+  const scoreReduction = subject.roundScore - settledRoundScore;
+  const settledSeats = normalized.map((seat) => seat.seatId === subjectId
+    ? {
+      ...seat,
+      roundScore: settledRoundScore,
+      totalScore: Math.max(0, seat.totalScore - scoreReduction)
+    }
+    : seat);
+  const finalCounts = americanPsychoStandingCounts(settledSeats, subjectId);
+  return {
+    initialHigherTotalCount: initialCounts.higherTotalCount,
+    initialHigherRoundCount: initialCounts.higherRoundCount,
+    higherTotalCount: finalCounts.higherTotalCount,
+    higherRoundCount: finalCounts.higherRoundCount,
+    settledRoundScore,
+    scoreReduction,
+    nextRoundBonus: americanPsychoNextRoundBonus(
+      finalCounts.higherTotalCount,
+      finalCounts.higherRoundCount
+    )
+  };
+}
+
+function scoreLossEndingIds(context = {}) {
+  const fateKind = String(context.fateKind || "");
+  const endings = [];
+  if (fateKind === "giant") endings.push("giant-david");
+  if (fateKind !== "giant" && Number(context.totalScore) === 0 && context.giantReducedToZero) {
+    endings.push("giant-zero-release");
+  }
+  if (context.assassinationDamageTaken) endings.push("assassinated-by-american-psycho");
+  if (context.escapedAssassination) endings.push("escaped-american-psycho");
+  if (context.tomatoEffectChosen) endings.push("greenhouse-tomatoes");
+  const fateEnding = SCORE_LOSS_FATE_ENDINGS.get(fateKind);
+  if (fateEnding) endings.push(fateEnding);
+  if (context.royalVictory) endings.push("royal-flush-someone-cheated");
+  return endings;
+}
+
+function scoreEndingIds(context = {}) {
+  if (!context.won) return scoreLossEndingIds({
+    ...context,
+    royalVictory: context.gameEndedByRoyalFlush ?? context.royalVictory
+  });
+  const endings = [];
+  if (context.escapedAssassination) endings.push("escaped-american-psycho");
+  const fateEnding = SCORE_WIN_FATE_ENDINGS.get(String(context.fateKind || ""));
+  if (fateEnding) endings.push(fateEnding);
+  if (context.tomatoEffectChosen && !context.wonByRoyalFlush) endings.push("tomato-god");
+  if (context.wonByRoyalFlush) endings.push("royal-flush-exodia");
+  return endings;
+}
+
 function fatePredictionPlan(seats, predictors) {
   const scoreBySeatId = new Map(
     (Array.isArray(seats) ? seats : [])
@@ -216,19 +439,31 @@ function fatePredictionPlan(seats, predictors) {
   const validPredictors = (Array.isArray(predictors) ? predictors : [])
     .filter((predictor) => predictor?.seatId && predictor?.targetSeatId && scoreBySeatId.has(String(predictor.targetSeatId)));
   const allScores = Array.from(scoreBySeatId.values());
+  const highestScore = allScores.length ? Math.max(...allScores) : null;
+  const lowestScore = allScores.length ? Math.min(...allScores) : null;
+  const highestSeatIds = new Set(
+    Array.from(scoreBySeatId).filter(([, score]) => score === highestScore).map(([seatId]) => seatId)
+  );
+  const lowestSeatIds = new Set(
+    Array.from(scoreBySeatId).filter(([, score]) => score === lowestScore).map(([seatId]) => seatId)
+  );
   const outcomes = validPredictors.map((predictor) => {
     const targetSeatId = String(predictor.targetSeatId);
+    const fateKind = String(predictor.fateKind || "");
     return {
       seatId: String(predictor.seatId),
       targetSeatId,
-      correct: fatePredictionCorrect(
-        String(predictor.fateKind || ""),
-        scoreBySeatId.get(targetSeatId),
-        allScores
-      )
+      correct: fateKind === "going-long"
+        ? highestSeatIds.has(targetSeatId)
+        : fateKind === "big-short" && lowestSeatIds.has(targetSeatId)
     };
   });
-  return { roundScores: Object.fromEntries(scoreBySeatId), outcomes };
+  return {
+    roundScores: Object.fromEntries(scoreBySeatId),
+    highestSeatIds: Array.from(highestSeatIds),
+    lowestSeatIds: Array.from(lowestSeatIds),
+    outcomes
+  };
 }
 
 function fateCollectorBonus(collectionNumber) {
@@ -339,12 +574,16 @@ function scorePlay(cards, effect, context = {}) {
   const hand = evaluateExactFive(cards);
   const royalFlush = isRoyalFlush(cards);
   const naturalBaseMultiplier = hand.multiplier;
-  const baseMultiplier = naturalBaseMultiplier;
+  const fateKind = String(context.fateKind || "");
+  const baseMultiplier = fateKind === "hanged-man" && HANGED_MAN_MULTIPLIER_HANDS.has(hand.id)
+    ? 6
+    : naturalBaseMultiplier;
   const requestedFateDiceMultiplier = Number(context.fateDiceMultiplier);
   const fateDiceMultiplier = Number.isFinite(requestedFateDiceMultiplier) && requestedFateDiceMultiplier > 0
     ? requestedFateDiceMultiplier
     : null;
-  const tomatoFinalScoreMultiplier = Math.min(hand.multiplier, 1);
+  const tomatoFinalScoreMultiplier = Math.min(hand.multiplier, 2);
+  const temperedTomatoFinalScoreMultiplier = Math.min(hand.multiplier, 1);
   const scoringIndexes = new Set(hand.scoringIndexes || cards.map((_, index) => index));
   let chips = 0;
   let additiveMultiplier = 0;
@@ -416,14 +655,23 @@ function scorePlay(cards, effect, context = {}) {
   for (let cardIndex = 0; cardIndex < cards.length; cardIndex += 1) {
     const card = cards[cardIndex];
     const scoresHand = scoringIndexes.has(cardIndex);
-    const printedChips = chipValue(card);
+    const originalPrintedChips = fateChipValue(card, fateKind);
+    const personaWeakened = Boolean(card.personaWeakened);
+    const printedChips = personaWeakened ? originalPrintedChips * 0.5 : originalPrintedChips;
     const kickerChips = scoresHand ? 0 : Math.min(Math.max(0, 20 - kickerChipsUsed), Math.floor(printedChips * 0.4));
     if (!scoresHand) kickerChipsUsed += kickerChips;
     const baseChips = scoresHand ? printedChips : kickerChips;
     let finalChips = baseChips;
     const bonuses = [];
+    if (personaWeakened) {
+      bonuses.push({
+        kind: "persona-card-penalty",
+        amount: printedChips - originalPrintedChips,
+        factor: 0.5
+      });
+    }
     if (effect?.kind === "red-chip") {
-      const amount = card.suit === "H" || card.suit === "D" ? 4 : 2;
+      const amount = card.suit === "H" || card.suit === "D" ? 7 : 5;
       finalChips += amount;
       bonuses.push({ kind: effect.kind, amount });
     }
@@ -433,8 +681,8 @@ function scorePlay(cards, effect, context = {}) {
           && effect.suit === roundEffect.suit
           && (!roundEffect.sourceSeatId || String(roundEffect.sourceSeatId) === scoredSeatId);
         if (isVoidOwner) {
-          finalChips += 4;
-          bonuses.push({ kind: roundEffect.kind, suit: roundEffect.suit, amount: 4 });
+          finalChips += 12;
+          bonuses.push({ kind: roundEffect.kind, suit: roundEffect.suit, amount: 12 });
           voidOwnerSuitApplied = true;
         } else {
           const reduced = Math.max(0, finalChips - roundEffect.amount);
@@ -474,36 +722,41 @@ function scorePlay(cards, effect, context = {}) {
 
   if (effect?.kind === "suit-chip") {
     const matches = cards.filter((card) => card.suit === effect.suit).length;
-    addGlobalChipBonus(effect.kind, Math.min(20, Math.max(8, matches * 4)));
+    addGlobalChipBonus(effect.kind, Math.min(40, Math.max(20, matches * 8)));
     addMultiplierBonus(effect.kind, 1);
   }
   if (effect?.kind === "rank-chip") {
     const matches = cards.filter((card) => rankSymbol(card) === effect.rank).length;
-    addGlobalChipBonus(effect.kind, Math.min(24, Math.max(10, matches * 6)));
+    addGlobalChipBonus(effect.kind, Math.min(50, Math.max(20, matches * 10)));
+    addMultiplierBonus(effect.kind, 1);
   }
   if (effect?.kind === "pair-mult") {
     const pairCount = countPairRanks(cards);
-    addGlobalChipBonus(effect.kind, Math.max(8, pairCount * 8));
-    if (["one-pair", "two-pair"].includes(hand.id)) addMultiplierBonus(effect.kind, 2);
+    addGlobalChipBonus(effect.kind, Math.max(12, pairCount * 12));
+    if (["one-pair", "two-pair"].includes(hand.id)) addMultiplierBonus(effect.kind, 2.5);
   }
   if (effect?.kind === "flush-mult") {
     addGlobalChipBonus(effect.kind, 7);
     if (["flush", "straight-flush"].includes(hand.id)) addMultiplierBonus(effect.kind, 1.5);
   }
+  if (effect?.kind === "red-chip") {
+    addMultiplierBonus(effect.kind, 2);
+  }
   if (voidOwnerSuitApplied) {
-    addMultiplierBonus("void-suit", 1);
+    addMultiplierBonus("void-suit", 2);
   }
   if (effect?.kind === "pattern-reproduction") {
     addMultiplierBonus(effect.kind, 2.5);
   }
   if (effect?.kind === "change-straight" && hand.id === "straight") {
-    addMultiplierBonus(effect.kind, HAND_BY_ID.get("straight-flush").multiplier - hand.multiplier);
+    addMultiplierBonus(effect.kind, HAND_BY_ID.get("straight-flush").multiplier - baseMultiplier);
   }
   if (effect?.kind === "straight-flush-boost" && hand.id === "straight-flush") {
     addScoreBonus(effect.kind, 1000);
   }
   if (effect?.kind === "shadow-swap") {
-    addGlobalChipBonus(effect.kind, 5);
+    const difference = Math.max(0, Number(effect.swappedChipDifference) || 0);
+    addGlobalChipBonus(effect.kind, Math.max(7, difference));
     addMultiplierBonus(effect.kind, 1);
   }
   if (effect?.kind === "void-erosion") {
@@ -511,11 +764,14 @@ function scorePlay(cards, effect, context = {}) {
     addGlobalChipBonus(effect.kind, 5);
     addMultiplierBonus(effect.kind, 1);
     addMultiplierBonus(effect.kind, Math.max(1, followingUnplayedPlayers));
-    addScoreBonus(effect.kind, followingUnplayedPlayers * 70);
+    addScoreBonus(effect.kind, followingUnplayedPlayers * 30);
   }
   if (["world-mirror", "man-mirror"].includes(effect?.kind)) {
-    addGlobalChipBonus(effect.kind, 6);
-    addMultiplierBonus(effect.kind, 2);
+    addGlobalChipBonus(effect.kind, Math.max(10, Number(effect.mirrorChipDifference) || 0));
+    addMultiplierBonus(effect.kind, 1);
+  }
+  if (effect?.kind === "goelia") {
+    addGlobalChipBonus(effect.kind, Math.max(0, Number(effect.rankDifferenceTotal) || 0));
   }
   if (effect?.kind === "shadow-targeting") {
     addScoreBonus(effect.kind, Math.max(0, Number(effect.gainedChipBonus) || 0) * 10);
@@ -533,11 +789,11 @@ function scorePlay(cards, effect, context = {}) {
   if (effect?.kind === "rambo") {
     const elapsedMs = Math.max(0, Number(context.turnElapsedMs) || 0);
     if (elapsedMs <= 10000) {
-      addGlobalChipBonus(effect.kind, 30);
-      addMultiplierBonus(effect.kind, 3);
+      addGlobalChipBonus(effect.kind, 60);
+      addMultiplierBonus(effect.kind, 4);
     } else if (elapsedMs <= 20000) {
-      addGlobalChipBonus(effect.kind, 15);
-      addMultiplierBonus(effect.kind, 1);
+      addGlobalChipBonus(effect.kind, 30);
+      addMultiplierBonus(effect.kind, 2);
     }
   }
   if (effect?.kind === "tomato-king") {
@@ -549,7 +805,9 @@ function scorePlay(cards, effect, context = {}) {
     addMultiplierBonus(effect.kind, 1);
   }
   if (effect?.kind === "old-days-tomatoes") {
-    addGlobalChipBonus(effect.kind, Math.max(0, Number(effect.tomatoThrows) || 0) * 0.5);
+    const throws = Math.max(0, Number(effect.tomatoThrows) || 0);
+    const hits = Math.max(0, Number(effect.tomatoHits) || 0);
+    addGlobalChipBonus(effect.kind, throws + hits);
   }
   if (effect?.kind === "dance-illusions") {
     addGlobalChipBonus(effect.kind, 5);
@@ -605,7 +863,7 @@ function scorePlay(cards, effect, context = {}) {
     const hits = Math.max(0, Number(tomatoCounts.hitsTotal) || 0);
     const throws = Math.max(0, Number(tomatoCounts.throwsTotal) || 0);
     if (hits > 30 || throws > 50) {
-      addScoreBonus("tempered-tomato", (hits * 0.5 + throws * 0.2) * tomatoFinalScoreMultiplier);
+      addScoreBonus("tempered-tomato", (hits * 0.5 + throws * 0.2) * temperedTomatoFinalScoreMultiplier);
     }
   }
   if (persistentEffects.returningFundamentals) {
@@ -619,13 +877,20 @@ function scorePlay(cards, effect, context = {}) {
     addMultiplierBonus("draw-sword", bonuses.multiplier);
   }
   if (persistentEffects.lordDominicksRegards && ["high-card", "one-pair", "two-pair", "three-kind", "straight"].includes(hand.id)) {
-    addMultiplierBonus("lord-dominicks-regards", Math.max(0, 6 - hand.multiplier));
+    addMultiplierBonus("lord-dominicks-regards", Math.max(0, 6 - baseMultiplier));
   }
   if (persistentEffects.astralBody) {
     addFinalScoreFactor("astral-body-penalty", astralBodyScoreFactor(round));
   }
   if (persistentEffects.giantKiller) {
     addScoreFactor("giant-killer", giantKillerScoreFactor(context));
+  }
+  if (fateKind === "giant") {
+    addMultiplierBonus("fate-giant", 1);
+  }
+  if (context.americanPsychoBonus) {
+    addGlobalChipBonus("american-psycho", Math.max(0, Number(context.americanPsychoBonus.chips) || 0));
+    addMultiplierBonus("american-psycho", Math.max(0, Number(context.americanPsychoBonus.multiplier) || 0));
   }
 
   const chipTotalBeforeFactors = chips;
@@ -655,7 +920,9 @@ function scorePlay(cards, effect, context = {}) {
       addScoreBonus("no-critical-hit", 100);
     }
   }
-  const rawScore = scoreBeforeBonuses * finalScoreFactor + flatScoreBonus;
+  const weaknessFactor = context.weaknessActive ? 0.75 : 1;
+  if (weaknessFactor !== 1) finalScoreFactors.push({ kind: "weakness", factor: weaknessFactor });
+  const rawScore = (scoreBeforeBonuses * finalScoreFactor + flatScoreBonus) * weaknessFactor;
   const score = Math.min(1000000, Math.max(0, Math.floor(rawScore)));
 
   return {
@@ -747,6 +1014,10 @@ function fateDiceValueForRoll(rawRoll) {
   return FATE_DICE_OUTCOMES[FATE_DICE_OUTCOMES.length - 1].value;
 }
 
+function fateDiceMisfortuneExtraRolls(roll) {
+  return Number(roll) === 3 ? 1 : 0;
+}
+
 function criticalMultiplierForCard(index, profile, criticalRolls, useExpectedValue) {
   if (profile.chance <= 0) return 1;
   if (criticalRolls[index] === true) return profile.multiplier;
@@ -769,10 +1040,11 @@ function giantKillerScoreFactor(context = {}) {
 function findBestPlay(handCards, communityCards, effect, options = {}) {
   const cards = handCards.concat(communityCards);
   if (cards.length < 5) throw new Error("Not enough cards to find a play.");
-  const communityCodes = new Set(communityCards.map((card) => card.code));
+  const communitySet = new Set(communityCards);
   let best = null;
   forEachCombination(cards, 5, (selection) => {
-    if (options.requireCommunity && !selection.some((card) => communityCodes.has(card.code))) return;
+    if (options.requireCommunity && !selection.some((card) => communitySet.has(card))) return;
+    if (typeof options.validateSelection === "function" && !options.validateSelection(selection)) return;
     const result = scorePlay(selection, effect, options);
     if (!best || result.score > best.result.score || (result.score === best.result.score && result.chips > best.result.chips)) {
       best = { cards: selection, result };
@@ -806,6 +1078,13 @@ function mirrorRankValue(rank) {
   return MIRROR_RANK.get(rank) || rank;
 }
 
+function mirrorRankDifference(rank) {
+  const originalRank = Number(rank) || 0;
+  const mirroredRank = mirrorRankValue(originalRank);
+  const differenceValue = (value) => value === 14 ? 1 : value;
+  return Math.abs(differenceValue(originalRank) - differenceValue(mirroredRank));
+}
+
 function randomItem(items) {
   return items[crypto.randomInt(items.length)];
 }
@@ -815,31 +1094,46 @@ module.exports = {
   HANDS,
   RANKS,
   SUITS,
+  americanPsychoAssassinationEligibleSeatIds,
+  americanPsychoNextRoundBonus,
+  americanPsychoQualifyingTargetSeatIds,
+  americanPsychoSettlementPlan,
+  americanPsychoStandingCounts,
+  americanPsychoSettledRoundScore,
   createDeck,
   createEffectOptions,
+  effectAddsFateDie,
   effectAllowedInRound,
   fateCollectorBonus,
+  fateDiceMisfortuneExtraRolls,
   fateDiceValueForRoll,
   fatePredictionCorrect,
   fatePredictionPlan,
   fatePredictionSuccessBonus,
   fateStartingDiscardUses,
+  fateChipValue,
   nextFatePredictionSuccessCount,
   giantAoePenalty,
   giantDefensePenalty,
   giantDefenseReduction,
   giantFatePenalty,
+  giantHandSize,
   giantKillerActiveInRound,
   giantKillerScoreFactor,
+  giantLeaderSmashPenalty,
   giantSettlementPlan,
   giantSmashPenalty,
   criticalProfileForEffects,
   displayCode,
   findBestPlay,
+  mirrorRankDifference,
   mirrorRankValue,
+  personaBorrowLimit,
   rankValue,
   rankSymbol,
   royalFlushWins,
+  scoreEndingIds,
+  scoreLossEndingIds,
   scorePlay,
   shuffle,
   tomatoCountRouting,
